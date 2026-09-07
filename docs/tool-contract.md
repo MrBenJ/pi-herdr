@@ -104,7 +104,7 @@ Every rejected call throws with a bounded JSON-encoded `Failure` body (`kind`, `
 | response_too_large | JSON/error stream exceeds the 1 MiB parsing limit |
 | resource_limit | Combined capture exceeds the 64 MiB ceiling |
 | cancelled | Local cancellation/shutdown |
-| timeout | Local subprocess deadline exceeded |
+| timeout | Local subprocess deadline exceeded, or Herdr reported `timeout` (retained as `herdrCode`) |
 
 Pre-spawn failures are `remoteOutcome: "not_attempted"`. Spawned mutation failures are conservatively `"unknown"`; read-only failures are `"not_applicable"`. A timeout/readiness failure is not rollback evidence. There is no automatic mutation retry.
 
