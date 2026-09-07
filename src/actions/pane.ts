@@ -200,7 +200,7 @@ export function compilePane(input: Input): Operation {
         group: "pane",
         action,
         argv: ["pane", "read", paneId, ...readFlags(input)],
-        output: "json",
+        output: "text",
         mutation: false,
         deadlineMs: DEADLINE_MS,
         sensitive: [],

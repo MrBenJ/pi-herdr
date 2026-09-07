@@ -192,7 +192,7 @@ export function compileAgent(input: Input): Operation {
         group: "agent",
         action,
         argv: ["agent", "read", target, ...readFlags(input)],
-        output: "json",
+        output: "text",
         mutation: false,
         deadlineMs: DEADLINE_MS,
         sensitive: [],

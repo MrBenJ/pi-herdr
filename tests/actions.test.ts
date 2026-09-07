@@ -436,14 +436,14 @@ describe("compilePane argv table", () => {
     {
       name: "read (defaults)",
       input: { action: "read", paneId: "w9:p7" },
-      expected: { argv: ["pane", "read", "w9:p7", "--source", "visible", "--format", "text"], output: "json", mutation: false, deadlineMs: 30000, sensitive: [] },
+      expected: { argv: ["pane", "read", "w9:p7", "--source", "visible", "--format", "text"], output: "text", mutation: false, deadlineMs: 30000, sensitive: [] },
     },
     {
       name: "read (lines, ansi)",
       input: { action: "read", paneId: "w9:p7", lines: 200, format: "ansi" },
       expected: {
         argv: ["pane", "read", "w9:p7", "--source", "visible", "--lines", "200", "--format", "ansi"],
-        output: "json",
+        output: "text",
         mutation: false,
         deadlineMs: 30000,
         sensitive: [],
@@ -594,7 +594,7 @@ describe("compileAgent argv table", () => {
       input: { action: "read", target: "reviewer" },
       expected: {
         argv: ["agent", "read", "reviewer", "--source", "visible", "--format", "text"],
-        output: "json",
+        output: "text",
         mutation: false,
         deadlineMs: 30000,
         sensitive: [],
