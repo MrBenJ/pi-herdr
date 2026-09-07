@@ -2,14 +2,18 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import type { Input, Operation } from "../contracts.ts";
 import { HerdrToolError } from "../errors.ts";
-import { assertAllowed, assertRecord, boolean, buildOperation, envFlags, requiredString } from "./shared.ts";
+import {
+  assertAllowed,
+  assertRecord,
+  boolean,
+  buildOperation,
+  envFlags,
+  EnvEntrySchema,
+  requireConfirmTrue,
+  requiredString,
+} from "./shared.ts";
 
 const DEADLINE_MS = 30000;
-
-const EnvEntrySchema = Type.Object({
-  name: Type.String({ description: "Environment variable name." }),
-  value: Type.String({ description: "Environment variable value." }),
-});
 
 export const TabSchema = Type.Object({
   action: StringEnum(["list", "inspect", "create", "rename", "focus", "close"], {
@@ -23,16 +27,6 @@ export const TabSchema = Type.Object({
   focus: Type.Optional(Type.Boolean({ description: "Focus the new tab once created." })),
   confirm: Type.Optional(Type.Boolean({ description: "Must be true to close a tab." })),
 });
-
-function requireConfirmTrue(input: Input): void {
-  if (boolean(input, "confirm", false) !== true) {
-    throw new HerdrToolError({
-      kind: "invalid_input",
-      message: "confirm must be true to close a tab.",
-      remoteOutcome: "not_attempted",
-    });
-  }
-}
 
 export function compileTab(input: Input): Operation {
   assertRecord(input);
@@ -130,7 +124,7 @@ export function compileTab(input: Input): Operation {
     case "close": {
       assertAllowed(input, ["tabId", "confirm"]);
       const tabId = requiredString(input, "tabId", "id");
-      requireConfirmTrue(input);
+      requireConfirmTrue(input, "tab");
       return buildOperation({
         group: "tab",
         action,

@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { Value } from "typebox/value";
 import type { Input, Operation } from "../src/contracts.ts";
-import { assertAllowed, boolean, envFlags, requiredString } from "../src/actions/shared.ts";
+import { assertAllowed, boolean, envFlags, readFlags, requiredString, timeout } from "../src/actions/shared.ts";
 import { compileTab, TabSchema } from "../src/actions/tab.ts";
 import { compileWorkspace, WorkspaceSchema } from "../src/actions/workspace.ts";
+import { compileAgent, AgentSchema } from "../src/actions/agent.ts";
+import { compilePane, PaneSchema } from "../src/actions/pane.ts";
+import { compile } from "../src/actions/index.ts";
 
 describe("shared validators", () => {
   it("rejects array input", () => {
@@ -305,5 +308,537 @@ describe("WorkspaceSchema and TabSchema", () => {
         confirm: true,
       }),
     ).toBe(true);
+  });
+});
+
+describe("shared timeout()", () => {
+  it("defaults to 30000 when timeoutMs is absent", () => {
+    expect(timeout({})).toBe(30000);
+  });
+
+  it.each([1, 300000])("accepts the ordinary boundary %s", (timeoutMs) => {
+    expect(timeout({ timeoutMs })).toBe(timeoutMs);
+  });
+
+  it.each([0, -1, NaN, Infinity, 1.5, 300001, "30000", null])("rejects ordinary timeout %s", (timeoutMs) => {
+    expect(() => timeout({ timeoutMs })).toThrow(/invalid_input/);
+  });
+
+  it.each([3001, 300000])("accepts the startup boundary %s", (timeoutMs) => {
+    expect(timeout({ timeoutMs }, 3001)).toBe(timeoutMs);
+  });
+
+  it.each([1, 2999, 3000])("rejects a startup timeout %s below the floor", (timeoutMs) => {
+    expect(() => timeout({ timeoutMs }, 3001)).toThrow(/invalid_input/);
+  });
+
+  it("rejects a startup timeout above the maximum", () => {
+    expect(() => timeout({ timeoutMs: 300001 }, 3001)).toThrow(/invalid_input/);
+  });
+});
+
+describe("shared readFlags()", () => {
+  it("defaults to visible source and text format", () => {
+    expect(readFlags({})).toEqual(["--source", "visible", "--format", "text"]);
+  });
+
+  it("includes --lines only when supplied", () => {
+    expect(readFlags({ lines: 500 })).toEqual(["--source", "visible", "--lines", "500", "--format", "text"]);
+  });
+
+  it("forwards an explicit source and format", () => {
+    expect(readFlags({ source: "recent-unwrapped", format: "ansi" })).toEqual(["--source", "recent-unwrapped", "--format", "ansi"]);
+  });
+
+  it("accepts the detection source", () => {
+    expect(readFlags({ source: "detection" })).toEqual(["--source", "detection", "--format", "text"]);
+  });
+
+  it("rejects an unsupported source", () => {
+    expect(() => readFlags({ source: "everything" })).toThrow(/invalid_input/);
+  });
+
+  it("accepts the lines ceiling", () => {
+    expect(readFlags({ lines: 1000000 })).toEqual(["--source", "visible", "--lines", "1000000", "--format", "text"]);
+  });
+
+  it.each([0, -1, 1.5, 1000001, "500"])("rejects an invalid lines value %s", (lines) => {
+    expect(() => readFlags({ lines })).toThrow(/invalid_input/);
+  });
+
+  it("rejects an unsupported format", () => {
+    expect(() => readFlags({ format: "json" })).toThrow(/invalid_input/);
+  });
+});
+
+describe("compilePane argv table", () => {
+  const rows: Array<{ name: string; input: Input; expected: Omit<Operation, "group" | "action"> }> = [
+    {
+      name: "list (no workspace filter)",
+      input: { action: "list" },
+      expected: { argv: ["pane", "list"], output: "json", mutation: false, deadlineMs: 30000, sensitive: [] },
+    },
+    {
+      name: "list (workspace filter)",
+      input: { action: "list", workspaceId: "w1" },
+      expected: { argv: ["pane", "list", "--workspace", "w1"], output: "json", mutation: false, deadlineMs: 30000, sensitive: [] },
+    },
+    {
+      name: "inspect",
+      input: { action: "inspect", paneId: "w9:p7" },
+      expected: { argv: ["pane", "get", "w9:p7"], output: "json", mutation: false, deadlineMs: 30000, sensitive: [] },
+    },
+    {
+      name: "split (minimal)",
+      input: { action: "split", paneId: "w9:p7", cwd: "/tmp/proj", direction: "right" },
+      expected: {
+        argv: ["pane", "split", "--pane", "w9:p7", "--direction", "right", "--cwd", "/tmp/proj", "--no-focus"],
+        output: "json",
+        mutation: true,
+        deadlineMs: 30000,
+        sensitive: [],
+      },
+    },
+    {
+      name: "split (ratio, env, focus)",
+      input: {
+        action: "split",
+        paneId: "w9:p7",
+        cwd: "/tmp/proj",
+        direction: "down",
+        ratio: 0.25,
+        env: [{ name: "FOO", value: "bar" }],
+        focus: true,
+      },
+      expected: {
+        argv: ["pane", "split", "--pane", "w9:p7", "--direction", "down", "--ratio", "0.25", "--cwd", "/tmp/proj", "--env", "FOO=bar", "--focus"],
+        output: "json",
+        mutation: true,
+        deadlineMs: 30000,
+        sensitive: ["bar"],
+      },
+    },
+    {
+      name: "run",
+      input: { action: "run", paneId: "w9:p7", command: "echo hi" },
+      expected: { argv: ["pane", "run", "w9:p7", "echo hi"], output: "json", mutation: true, deadlineMs: 30000, sensitive: ["echo hi"] },
+    },
+    {
+      name: "send-text",
+      input: { action: "send-text", paneId: "w9:p7", text: "hello" },
+      expected: { argv: ["pane", "send-text", "w9:p7", "hello"], output: "json", mutation: true, deadlineMs: 30000, sensitive: ["hello"] },
+    },
+    {
+      name: "send-keys",
+      input: { action: "send-keys", paneId: "w9:p7", keys: ["Enter", "ctrl+c"] },
+      expected: { argv: ["pane", "send-keys", "w9:p7", "Enter", "ctrl+c"], output: "json", mutation: true, deadlineMs: 30000, sensitive: [] },
+    },
+    {
+      name: "read (defaults)",
+      input: { action: "read", paneId: "w9:p7" },
+      expected: { argv: ["pane", "read", "w9:p7", "--source", "visible", "--format", "text"], output: "json", mutation: false, deadlineMs: 30000, sensitive: [] },
+    },
+    {
+      name: "read (lines, ansi)",
+      input: { action: "read", paneId: "w9:p7", lines: 200, format: "ansi" },
+      expected: {
+        argv: ["pane", "read", "w9:p7", "--source", "visible", "--lines", "200", "--format", "ansi"],
+        output: "json",
+        mutation: false,
+        deadlineMs: 30000,
+        sensitive: [],
+      },
+    },
+    {
+      name: "wait-output (match)",
+      input: { action: "wait-output", paneId: "w9:p7", match: "ready" },
+      expected: {
+        argv: ["pane", "wait-output", "w9:p7", "--match", "ready", "--source", "visible", "--timeout", "30000"],
+        output: "json",
+        mutation: false,
+        deadlineMs: 31000,
+        sensitive: [],
+      },
+    },
+    {
+      name: "wait-output (regex, raw, custom source/lines/timeout)",
+      input: { action: "wait-output", paneId: "w9:p7", regex: "^ready", source: "recent", lines: 10, timeoutMs: 5000, raw: true },
+      expected: {
+        argv: ["pane", "wait-output", "w9:p7", "--regex", "^ready", "--source", "recent", "--lines", "10", "--timeout", "5000", "--raw"],
+        output: "json",
+        mutation: false,
+        deadlineMs: 6000,
+        sensitive: [],
+      },
+    },
+    {
+      name: "focus-neighbor",
+      input: { action: "focus-neighbor", paneId: "w9:p7", direction: "right" },
+      expected: { argv: ["pane", "focus", "--pane", "w9:p7", "--direction", "right"], output: "json", mutation: true, deadlineMs: 30000, sensitive: [] },
+    },
+    {
+      name: "close",
+      input: { action: "close", paneId: "w9:p7", confirm: true },
+      expected: { argv: ["pane", "close", "w9:p7"], output: "json", mutation: true, deadlineMs: 30000, sensitive: [] },
+    },
+  ];
+
+  it.each(rows)("$name", ({ input, expected }) => {
+    const op = compilePane(input);
+    expect(op).toEqual({ group: "pane", action: input.action, ...expected });
+  });
+});
+
+describe("compilePane validation edge cases", () => {
+  it("rejects wait-output with neither match nor regex", () => {
+    expect(() => compilePane({ action: "wait-output", paneId: "w9:p7" })).toThrow(/invalid_input/);
+  });
+
+  it("rejects wait-output with both match and regex", () => {
+    expect(() => compilePane({ action: "wait-output", paneId: "w9:p7", match: "a", regex: "b" })).toThrow(/invalid_input/);
+  });
+
+  it("rejects wait-output source=detection", () => {
+    expect(() => compilePane({ action: "wait-output", paneId: "w9:p7", match: "a", source: "detection" })).toThrow(/invalid_input/);
+  });
+
+  it("rejects an empty keys array", () => {
+    expect(() => compilePane({ action: "send-keys", paneId: "w9:p7", keys: [] })).toThrow(/invalid_input/);
+  });
+
+  it("rejects an empty item inside keys", () => {
+    expect(() => compilePane({ action: "send-keys", paneId: "w9:p7", keys: ["Enter", ""] })).toThrow(/invalid_input/);
+  });
+
+  it("rejects split direction=left", () => {
+    expect(() => compilePane({ action: "split", paneId: "w9:p7", cwd: "/tmp", direction: "left" })).toThrow(/invalid_input/);
+  });
+
+  it.each([0, 1, NaN, Infinity, -Infinity])("rejects a ratio endpoint or non-finite value %s", (ratio) => {
+    expect(() => compilePane({ action: "split", paneId: "w9:p7", cwd: "/tmp", direction: "right", ratio })).toThrow(/invalid_input/);
+  });
+
+  it("accepts a ratio strictly between 0 and 1", () => {
+    expect(compilePane({ action: "split", paneId: "w9:p7", cwd: "/tmp", direction: "right", ratio: 0.5 }).argv).toContain("--ratio");
+  });
+
+  it("rejects pane close without confirm", () => {
+    expect(() => compilePane({ action: "close", paneId: "w9:p7" })).toThrow(/invalid_input/);
+  });
+
+  it.each([1, 300000])("accepts an ordinary wait-output timeout boundary %s", (timeoutMs) => {
+    expect(compilePane({ action: "wait-output", paneId: "w9:p7", match: "a", timeoutMs }).argv).toContain(String(timeoutMs));
+  });
+
+  it.each([0, -1, NaN, Infinity, 1.5, 300001, "30000"])("rejects a wait-output timeout %s", (timeoutMs) => {
+    expect(() => compilePane({ action: "wait-output", paneId: "w9:p7", match: "a", timeoutMs })).toThrow(/invalid_input/);
+  });
+});
+
+describe("compileAgent argv table", () => {
+  const rows: Array<{ name: string; input: Input; expected: Omit<Operation, "group" | "action"> }> = [
+    {
+      name: "list",
+      input: { action: "list" },
+      expected: { argv: ["agent", "list"], output: "json", mutation: false, deadlineMs: 30000, sensitive: [] },
+    },
+    {
+      name: "inspect",
+      input: { action: "inspect", target: "reviewer" },
+      expected: { argv: ["agent", "get", "reviewer"], output: "json", mutation: false, deadlineMs: 30000, sensitive: [] },
+    },
+    {
+      name: "start (minimal)",
+      input: { action: "start", name: "reviewer", kind: "pi", paneId: "w9:p7" },
+      expected: {
+        argv: ["agent", "start", "reviewer", "--kind", "pi", "--pane", "w9:p7", "--timeout", "30000"],
+        output: "json",
+        mutation: true,
+        deadlineMs: 31000,
+        sensitive: [],
+      },
+    },
+    {
+      name: "rename (name)",
+      input: { action: "rename", target: "reviewer", name: "critic" },
+      expected: { argv: ["agent", "rename", "reviewer", "critic"], output: "json", mutation: true, deadlineMs: 30000, sensitive: [] },
+    },
+    {
+      name: "rename (clear)",
+      input: { action: "rename", target: "reviewer", clear: true },
+      expected: { argv: ["agent", "rename", "reviewer", "--clear"], output: "json", mutation: true, deadlineMs: 30000, sensitive: [] },
+    },
+    {
+      name: "prompt (no wait)",
+      input: { action: "prompt", target: "reviewer", text: "hello" },
+      expected: { argv: ["agent", "prompt", "reviewer", "hello"], output: "json", mutation: true, deadlineMs: 30000, sensitive: ["hello"] },
+    },
+    {
+      name: "prompt (wait, until repeated)",
+      input: { action: "prompt", target: "reviewer", text: "hello", wait: true, until: ["idle", "blocked"] },
+      expected: {
+        argv: ["agent", "prompt", "reviewer", "hello", "--wait", "--until", "idle", "--until", "blocked", "--timeout", "30000"],
+        output: "json",
+        mutation: true,
+        deadlineMs: 31000,
+        sensitive: ["hello"],
+      },
+    },
+    {
+      name: "send-keys",
+      input: { action: "send-keys", target: "reviewer", keys: ["Enter"] },
+      expected: { argv: ["agent", "send-keys", "reviewer", "Enter"], output: "json", mutation: true, deadlineMs: 30000, sensitive: [] },
+    },
+    {
+      name: "read (defaults)",
+      input: { action: "read", target: "reviewer" },
+      expected: {
+        argv: ["agent", "read", "reviewer", "--source", "visible", "--format", "text"],
+        output: "json",
+        mutation: false,
+        deadlineMs: 30000,
+        sensitive: [],
+      },
+    },
+    {
+      name: "wait (no until)",
+      input: { action: "wait", target: "reviewer" },
+      expected: { argv: ["agent", "wait", "reviewer", "--timeout", "30000"], output: "json", mutation: false, deadlineMs: 31000, sensitive: [] },
+    },
+    {
+      name: "wait (all five lifecycle states, in order)",
+      input: { action: "wait", target: "reviewer", until: ["idle", "working", "blocked", "done", "unknown"] },
+      expected: {
+        argv: [
+          "agent", "wait", "reviewer",
+          "--until", "idle", "--until", "working", "--until", "blocked", "--until", "done", "--until", "unknown",
+          "--timeout", "30000",
+        ],
+        output: "json",
+        mutation: false,
+        deadlineMs: 31000,
+        sensitive: [],
+      },
+    },
+    {
+      name: "focus",
+      input: { action: "focus", target: "reviewer" },
+      expected: { argv: ["agent", "focus", "reviewer"], output: "json", mutation: true, deadlineMs: 30000, sensitive: [] },
+    },
+  ];
+
+  it.each(rows)("$name", ({ input, expected }) => {
+    const op = compileAgent(input);
+    expect(op).toEqual({ group: "agent", action: input.action, ...expected });
+  });
+
+  it("preserves empty items, spaces, quotes, and newlines in start args", () => {
+    const args = ["--model", "provider/model", "--append-system-prompt", "a 'b'\n$(c)", ""];
+    const op = compileAgent({ action: "start", name: "reviewer", kind: "pi", paneId: "w9:p7", args });
+    expect(op.argv).toEqual(["agent", "start", "reviewer", "--kind", "pi", "--pane", "w9:p7", "--timeout", "30000", "--", ...args]);
+    expect(op.sensitive).toEqual(args);
+  });
+});
+
+describe("compileAgent validation edge cases", () => {
+  it("rejects an invalid agent kind", () => {
+    expect(() => compileAgent({ action: "start", name: "reviewer", kind: "bogus", paneId: "w9:p7" })).toThrow(/invalid_input/);
+  });
+
+  it("rejects an invalid agent name pattern", () => {
+    expect(() => compileAgent({ action: "start", name: "Reviewer!", kind: "pi", paneId: "w9:p7" })).toThrow(/invalid_input/);
+  });
+
+  it.each([1, 2999, 3000])("rejects a startup timeoutMs %s below the floor", (timeoutMs) => {
+    expect(() => compileAgent({ action: "start", name: "reviewer", kind: "pi", paneId: "w9:p7", timeoutMs })).toThrow(/invalid_input/);
+  });
+
+  it.each([3001, 300000])("accepts a startup timeoutMs %s at or above the floor", (timeoutMs) => {
+    expect(compileAgent({ action: "start", name: "reviewer", kind: "pi", paneId: "w9:p7", timeoutMs }).argv).toContain(String(timeoutMs));
+  });
+
+  it("rejects rename with neither name nor clear", () => {
+    expect(() => compileAgent({ action: "rename", target: "reviewer" })).toThrow(/invalid_input/);
+  });
+
+  it("rejects rename with both name and clear", () => {
+    expect(() => compileAgent({ action: "rename", target: "reviewer", name: "critic", clear: true })).toThrow(/invalid_input/);
+  });
+
+  it.each([false, null, "true", 1])("rejects rename clear=%s", (clear) => {
+    expect(() => compileAgent({ action: "rename", target: "reviewer", clear })).toThrow(/invalid_input/);
+  });
+
+  it("rejects prompt until without wait", () => {
+    expect(() => compileAgent({ action: "prompt", target: "reviewer", text: "hi", until: ["idle"] })).toThrow(/invalid_input/);
+  });
+
+  it("rejects prompt timeoutMs without wait", () => {
+    expect(() => compileAgent({ action: "prompt", target: "reviewer", text: "hi", timeoutMs: 5000 })).toThrow(/invalid_input/);
+  });
+
+  it("rejects a duplicate until state", () => {
+    expect(() => compileAgent({ action: "wait", target: "reviewer", until: ["idle", "idle"] })).toThrow(/invalid_input/);
+  });
+
+  it("rejects an empty until array", () => {
+    expect(() => compileAgent({ action: "wait", target: "reviewer", until: [] })).toThrow(/invalid_input/);
+  });
+
+  it("rejects an unknown until state", () => {
+    expect(() => compileAgent({ action: "wait", target: "reviewer", until: ["stuck"] })).toThrow(/invalid_input/);
+  });
+
+  it.each([1, 300000])("accepts an ordinary agent wait timeoutMs boundary %s", (timeoutMs) => {
+    expect(compileAgent({ action: "wait", target: "reviewer", timeoutMs }).argv).toContain(String(timeoutMs));
+  });
+
+  it("rejects an empty send-keys array on an agent", () => {
+    expect(() => compileAgent({ action: "send-keys", target: "reviewer", keys: [] })).toThrow(/invalid_input/);
+  });
+});
+
+describe("pane/agent unknown or inapplicable fields", () => {
+  it("rejects an unknown field on a pane action", () => {
+    expect(() => compilePane({ action: "list", bogus: true })).toThrow(/invalid_input/);
+  });
+
+  it("rejects a field that does not apply to the given pane action", () => {
+    expect(() => compilePane({ action: "read", paneId: "w9:p7", direction: "right" })).toThrow(/invalid_input/);
+  });
+
+  it("rejects an unknown field on an agent action", () => {
+    expect(() => compileAgent({ action: "list", bogus: true })).toThrow(/invalid_input/);
+  });
+
+  it("rejects a field that does not apply to the given agent action", () => {
+    expect(() => compileAgent({ action: "focus", target: "reviewer", kind: "pi" })).toThrow(/invalid_input/);
+  });
+});
+
+describe("brief critical examples", () => {
+  it("preserves native arguments only after agent-start separator", () => {
+    const args = ["--model", "provider/model", "--append-system-prompt", "a 'b'\n$(c)", ""];
+    expect(compileAgent({ action: "start", name: "reviewer", kind: "pi", paneId: "w9:p7", args }).argv)
+      .toEqual(["agent", "start", "reviewer", "--kind", "pi", "--pane", "w9:p7", "--timeout", "30000", "--", ...args]);
+  });
+  it("puts prompt operands before wait options", () => {
+    const op = compileAgent({ action: "prompt", target: "reviewer", text: "--help", wait: true });
+    expect(op.argv).toEqual(["agent", "prompt", "reviewer", "--help", "--wait", "--timeout", "30000"]);
+    expect(op.deadlineMs).toBe(31000);
+  });
+  it("uses visible reads and bounded output waits", () => {
+    expect(compilePane({ action: "read", paneId: "w9:p7" }).argv)
+      .toEqual(["pane", "read", "w9:p7", "--source", "visible", "--format", "text"]);
+    expect(compilePane({ action: "wait-output", paneId: "w9:p7", match: "--ready" }).argv)
+      .toEqual(["pane", "wait-output", "w9:p7", "--match", "--ready", "--source", "visible", "--timeout", "30000"]);
+  });
+  it.each([0, -1, NaN, Infinity, 1.5, 300001, "30000"])("rejects timeout %s", timeoutMs => {
+    expect(() => compileAgent({ action: "wait", target: "reviewer", timeoutMs })).toThrow(/invalid_input/);
+  });
+  it("does not silently choose the focused source pane", () => {
+    expect(() => compilePane({ action: "focus-neighbor", direction: "right" })).toThrow(/invalid_input/);
+    expect(compilePane({ action: "focus-neighbor", paneId: "w9:p7", direction: "right" }).argv)
+      .toEqual(["pane", "focus", "--pane", "w9:p7", "--direction", "right"]);
+  });
+});
+
+describe("PaneSchema and AgentSchema", () => {
+  it("accepts every pane action with no other fields", () => {
+    for (const action of ["list", "inspect", "split", "run", "send-text", "send-keys", "read", "wait-output", "focus-neighbor", "close"]) {
+      expect(Value.Check(PaneSchema, { action })).toBe(true);
+    }
+  });
+
+  it("accepts every agent action with no other fields", () => {
+    for (const action of ["list", "inspect", "start", "rename", "prompt", "send-keys", "read", "wait", "focus"]) {
+      expect(Value.Check(AgentSchema, { action })).toBe(true);
+    }
+  });
+
+  it("rejects a pane action outside the frozen enum", () => {
+    expect(Value.Check(PaneSchema, { action: "delete" })).toBe(false);
+  });
+
+  it("rejects an agent action outside the frozen enum", () => {
+    expect(Value.Check(AgentSchema, { action: "delete" })).toBe(false);
+  });
+
+  it("accepts a pane schema instance carrying every optional field at once", () => {
+    expect(
+      Value.Check(PaneSchema, {
+        action: "split",
+        workspaceId: "w1",
+        paneId: "w1:p1",
+        cwd: "/tmp",
+        direction: "right",
+        ratio: 0.5,
+        env: [{ name: "FOO", value: "bar" }],
+        focus: true,
+        confirm: true,
+        command: "echo hi",
+        text: "hello",
+        keys: ["Enter"],
+        source: "recent",
+        lines: 10,
+        format: "ansi",
+        match: "a",
+        regex: "b",
+        raw: true,
+        timeoutMs: 5000,
+      }),
+    ).toBe(true);
+  });
+
+  it("accepts an agent schema instance carrying every optional field at once", () => {
+    expect(
+      Value.Check(AgentSchema, {
+        action: "start",
+        target: "reviewer",
+        name: "reviewer",
+        clear: true,
+        kind: "pi",
+        paneId: "w1:p1",
+        args: ["--flag"],
+        wait: true,
+        until: ["idle", "done"],
+        timeoutMs: 5000,
+        text: "hello",
+        keys: ["Enter"],
+        source: "recent",
+        lines: 10,
+        format: "ansi",
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("compile() dispatcher", () => {
+  it("dispatches a workspace action to compileWorkspace", () => {
+    expect(compile("workspace", { action: "list" })).toEqual({
+      group: "workspace", action: "list", argv: ["workspace", "list"], output: "json", mutation: false, deadlineMs: 30000, sensitive: [],
+    });
+  });
+
+  it("dispatches a tab action to compileTab", () => {
+    expect(compile("tab", { action: "list" })).toEqual({
+      group: "tab", action: "list", argv: ["tab", "list"], output: "json", mutation: false, deadlineMs: 30000, sensitive: [],
+    });
+  });
+
+  it("dispatches a pane action to compilePane", () => {
+    expect(compile("pane", { action: "list" })).toEqual({
+      group: "pane", action: "list", argv: ["pane", "list"], output: "json", mutation: false, deadlineMs: 30000, sensitive: [],
+    });
+  });
+
+  it("dispatches an agent action to compileAgent", () => {
+    expect(compile("agent", { action: "list" })).toEqual({
+      group: "agent", action: "list", argv: ["agent", "list"], output: "json", mutation: false, deadlineMs: 30000, sensitive: [],
+    });
+  });
+
+  it("rejects an unknown group", () => {
+    expect(() => compile("bogus" as never, { action: "list" })).toThrow(/invalid_input/);
   });
 });
