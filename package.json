@@ -16,7 +16,8 @@
     "README.md",
     "docs/compatibility.md",
     "docs/tool-contract.md",
-    "docs/manual-smoke.md"
+    "docs/manual-smoke.md",
+    "docs/release-checklist.md"
   ],
   "engines": {
     "node": ">=22.19.0"

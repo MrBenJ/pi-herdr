@@ -96,13 +96,21 @@ describe.skipIf(process.env.HERDR_CLI_CONTRACT !== "1")("installed Herdr CLI con
     });
   });
 
-  it("pane read forwards visible, recent, and recent-unwrapped sources literally", async () => {
+  it("pane read forwards all four supported sources literally", async () => {
     await withFakeServer(async (socketPath, requests) => {
       await probe(compilePane({ action: "read", paneId: "w9:p7", source: "visible" }).argv, socketPath);
       await probe(compilePane({ action: "read", paneId: "w9:p7", source: "recent" }).argv, socketPath);
       await probe(compilePane({ action: "read", paneId: "w9:p7", source: "recent-unwrapped" }).argv, socketPath);
+      await probe(compilePane({ action: "read", paneId: "w9:p7", source: "detection" }).argv, socketPath);
       const reads = requests.filter((q) => q.method === "pane.read").map((q) => (q.params as Record<string, unknown>).source);
-      expect(reads).toEqual(["visible", "recent", "recent_unwrapped"]);
+      expect(reads).toEqual(["visible", "recent", "recent_unwrapped", "detection"]);
+    });
+  });
+
+  it("agent read translates recent-unwrapped through the native CLI", async () => {
+    await withFakeServer(async (socketPath, requests) => {
+      await probe(compileAgent({ action: "read", target: "reviewer", source: "recent-unwrapped" }).argv, socketPath);
+      expect(requests.find(q => q.method === "agent.read")?.params).toMatchObject({ target: "reviewer", source: "recent_unwrapped" });
     });
   });
 

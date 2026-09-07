@@ -1,6 +1,6 @@
 # Tool contract
 
-Human-readable reference for the four agent-callable tools this package registers: `herdr_workspace`, `herdr_tab`, `herdr_pane`, `herdr_agent`. Each tool takes one flat object; `action` is always required. Fields not required by the chosen action are rejected, not silently ignored — this includes fields that are valid for a different action in the same tool.
+Human-readable reference for the four agent-callable tools this package registers: `herdr_workspace`, `herdr_tab`, `herdr_pane`, `herdr_agent`. Each tool takes one flat object; `action` is always required. Fields not allowed by the chosen action are rejected, not silently ignored — this includes fields that are valid for a different action in the same tool.
 
 V1 controls only the Herdr server hosting the current pi session. Creation and splitting default to `--no-focus`. Every close requires an explicit target ID and `confirm: true`.
 
@@ -61,12 +61,57 @@ V1 controls only the Herdr server hosting the current pi session. Creation and s
 | wait | target | until, timeoutMs | no |
 | focus | target | — | yes |
 
-`agent start`'s timeout floor (3001 ms) is stricter than every other wait (floor 1 ms). Startup and prompt-wait/agent-wait deadlines always include a fixed 1000 ms local response-drain allowance beyond the requested/default Herdr timeout. `agent start` performs a preparatory pane lookup before requesting the launch; this package does not claim that as proof of a completed launch — only the manual smoke test verifies actual agent forwarding.
+`agent start`'s timeout floor (3001 ms) is stricter than every other wait (floor 1 ms). Startup and prompt-wait/agent-wait deadlines always include a fixed 1000 ms local response-drain allowance beyond the requested/default Herdr timeout. `agent start` performs a preparatory pane lookup before requesting the launch; this package does not claim that as proof of a completed launch — actual agent forwarding still requires the owner-authorized manual smoke, which has not yet run.
 
 ## `herdr_workspace` and `herdr_tab`
 
-See Task 1: `list`/`inspect`/`create`/`focus`/`close` (workspace) and `list`/`inspect`/`create`/`rename`/`focus`/`close` (tab), with the same `cwd`/`env`/`focus`/`confirm` rules as above.
+### Workspace
+
+| Action | Required | Optional | Mutation? |
+|---|---|---|---|
+| list | — | — | no |
+| inspect | workspaceId | — | no |
+| create | cwd | label, env, focus | yes |
+| focus | workspaceId | — | yes |
+| close | workspaceId, confirm=true | — | yes |
+
+### Tab
+
+| Action | Required | Optional | Mutation? |
+|---|---|---|---|
+| list | — | workspaceId | no |
+| inspect | tabId | — | no |
+| create | workspaceId, cwd | label, env, focus | yes |
+| rename | tabId, label | — | yes |
+| focus | tabId | — | yes |
+| close | tabId, confirm=true | — | yes |
+
+Use actual returned creation handles; do not derive IDs from a requested name or a numbering convention. `confirm: true` is trusted caller opt-in, not independent human authorization. Every destructive target remains explicit even in headless sessions.
 
 ## Errors
 
-Every rejected call throws with a JSON-encoded `Failure` body (kind, message, `remoteOutcome`). Validation failures are always `kind: "invalid_input"` with `remoteOutcome: "not_attempted"` — no subprocess is spawned. Unknown or action-inapplicable fields are rejected the same way, even when only one field is out of place.
+Every rejected call throws with a bounded JSON-encoded `Failure` body (`kind`, `message`, `remoteOutcome`, plus applicable `herdrCode`, `exitCode`, `stdoutPath`, `stderrPath`). Pi sees a failed tool call, not a normal returned object with an `isError` field. Compiler validation failures are always `invalid_input` / `not_attempted`, before spawning; unknown/inapplicable fields are rejected identically. Even errors caused by enormous invalid input remain valid JSON within presentation bounds.
+
+| Kind | Meaning |
+|---|---|
+| invalid_input | Compiler validation failure, or native CLI usage exit code 2 |
+| missing_host | Missing hosting marker/socket, or a non-absolute socket path |
+| missing_executable | Spawn failed with executable-not-found |
+| server_unavailable | Herdr's `server_not_running` error for the explicit hosting server |
+| operation_failed | Other structured Herdr error (code retained subject to bounding/redaction), or unexplained nonzero CLI exit |
+| transport_failed | Local process/capture/transport failure, including incomplete capture |
+| malformed_output | Invalid JSON success envelope or missing required creation handle |
+| response_too_large | JSON/error stream exceeds the 1 MiB parsing limit |
+| resource_limit | Combined capture exceeds the 64 MiB ceiling |
+| cancelled | Local cancellation/shutdown |
+| timeout | Local subprocess deadline exceeded |
+
+Pre-spawn failures are `remoteOutcome: "not_attempted"`. Spawned mutation failures are conservatively `"unknown"`; read-only failures are `"not_applicable"`. A timeout/readiness failure is not rollback evidence. There is no automatic mutation retry.
+
+## Results and retention
+
+Success text is bounded to 2000 lines/51200 UTF-8 bytes including notices. Structured details have an independent serialized JSON byte bound. Small JSON results preserve server-assigned IDs and states in `details.result`. When details cannot safely retain the full result, `resultOmitted: true` and artifact metadata replace it; text provides a bounded preview rather than fabricated creation handles. Read stdout is literal terminal text even if it resembles a JSON envelope; stderr is still checked for transport/Herdr errors.
+
+All captures use private temporary files. Small clean successes remove them when possible; truncated/interrupted/error responses and omitted diagnostics retain real paths. Capture-limit files contain only the persisted prefix. Retention is not durability, and raw files can contain sensitive output that was redacted/omitted from normal tool output. See [README](../README.md#output-errors-and-private-artifacts).
+
+Cancellation and extension shutdown stop only owned local CLI calls. They do not close remote layout or terminate remote workers. Reads/waits do not establish task success; inspect actual evidence, especially blocked/approval states.
