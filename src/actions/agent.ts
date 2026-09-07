@@ -30,22 +30,14 @@ export const AgentSchema = Type.Object({
   paneId: Type.Optional(Type.String({ description: "Existing pane at an interactive shell prompt." })),
   args: Type.Optional(Type.Array(Type.String(), { description: "Native arguments forwarded after the launch separator." })),
   wait: Type.Optional(Type.Boolean({ description: "Wait for a settled state after a prompt." })),
-  until: Type.Optional(Type.Array(Type.String(), { description: "States to match: idle, working, blocked, done, unknown." })),
+  until: Type.Optional(Type.Array(StringEnum(STATES), { description: "States to match: idle, working, blocked, done, unknown." })),
   timeoutMs: Type.Optional(Type.Number({ description: "Timeout in milliseconds." })),
   text: Type.Optional(Type.String({ description: "Prompt text to submit to the agent." })),
   keys: Type.Optional(Type.Array(Type.String(), { description: "Key presses to send to the agent." })),
-  source: Type.Optional(Type.String({ description: "Terminal snapshot source." })),
+  source: Type.Optional(StringEnum(["visible", "recent", "recent-unwrapped", "detection"], { description: "Terminal snapshot source." })),
   lines: Type.Optional(Type.Number({ description: "Restrict the snapshot to this many lines." })),
-  format: Type.Optional(Type.String({ description: "Read format: text or ansi." })),
+  format: Type.Optional(StringEnum(["text", "ansi"], { description: "Read format: text or ansi." })),
 });
-
-function agentName(input: Input, key: string): string {
-  const value = input[key];
-  if (typeof value !== "string" || !/^[a-z][a-z0-9_-]{0,31}$/.test(value)) {
-    throw invalidInput(`Field "${key}" does not match the required agent name pattern.`);
-  }
-  return value;
-}
 
 function agentKind(input: Input): string {
   const kind = input["kind"];
@@ -123,7 +115,7 @@ export function compileAgent(input: Input): Operation {
     }
     case "start": {
       assertAllowed(input, ["name", "kind", "paneId", "args", "timeoutMs"]);
-      const name = agentName(input, "name");
+      const name = requiredString(input, "name", "name");
       const kind = agentKind(input);
       const paneId = requiredString(input, "paneId", "id");
       const timeoutMs = timeout(input, 3001);
@@ -152,7 +144,7 @@ export function compileAgent(input: Input): Operation {
       }
       let argv: string[];
       if (hasName) {
-        argv = ["agent", "rename", target, agentName(input, "name")];
+        argv = ["agent", "rename", target, requiredString(input, "name", "name")];
       } else {
         if (input["clear"] !== true) {
           throw invalidInput('Field "clear" must be true when supplied.');
