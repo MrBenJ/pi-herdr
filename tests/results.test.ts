@@ -5,7 +5,7 @@ import { compilePane } from "../src/actions/pane.ts";
 import { compileTab } from "../src/actions/tab.ts";
 import { compileWorkspace } from "../src/actions/workspace.ts";
 import type { Failure, FailureKind, Operation, RunResult } from "../src/contracts.ts";
-import { HerdrToolError } from "../src/errors.ts";
+import { HerdrToolError, redact } from "../src/errors.ts";
 import { normalize } from "../src/results.ts";
 import { captured, cleanupCaptured } from "./support/harness.ts";
 import { createdPane, createdTab, createdWorkspace, startedAgent, blockedError } from "./support/fixtures.ts";
@@ -148,10 +148,44 @@ it("cleanup failure cannot replace a known remote result with a pre-spawn error"
 });
 it("a missing diagnostic file produces sanitized failure without returning its deleted path", async () => {
   const run = await capture(JSON.stringify(createdTab)); await fs.rm(run.stdout.path);
-  await expect(normalize(create(), run)).rejects.toMatchObject({ failure: { kind: "transport_failed", remoteOutcome: "unknown" } });
-  try { await normalize(create(), run); } catch (error) {
-    expect(JSON.parse((error as Error).message).stdoutPath).toBeUndefined();
+  const error: unknown = await normalize(create(), run).catch(caught => caught);
+  expect(error).toBeInstanceOf(HerdrToolError);
+  expect(error).toMatchObject({ failure: { kind: "transport_failed", remoteOutcome: "unknown" } });
+  expect(JSON.parse((error as Error).message).stdoutPath).toBeUndefined();
+});
+it("retains the raw artifact when pretty JSON exceeds the line cap but not the byte cap", async () => {
+  const result = { items: Array.from({ length: 700 }, (_, i) => ({ id: `w${i}`, n: i })) };
+  const run = await capture(JSON.stringify({ id: "fixture", result }));
+  expect(run.stdout.truncated).toBe(false);
+  expect(Buffer.byteLength(JSON.stringify(result, null, 2))).toBeLessThan(51200);
+  expect(JSON.stringify(result, null, 2).split("\n").length).toBeGreaterThan(2000);
+  const output = await normalize(list(), run);
+  expect(output.details.truncated).toBe(true);
+  expect(output.details.stdoutPath).toBe(run.stdout.path);
+  expect(output.content[0]!.text).toContain(run.stdout.path);
+  await expect(fs.stat(run.stdout.path)).resolves.toBeDefined();
+});
+it.each([
+  ["stdout incomplete", (run: RunResult) => { run.stdout.complete = false; }],
+  ["stderr incomplete", (run: RunResult) => { run.stderr.complete = false; }],
+  ["stdout I/O failure", (run: RunResult) => { run.stdout.ioFailed = true; }],
+  ["stderr I/O failure", (run: RunResult) => { run.stderr.ioFailed = true; }],
+  ["unspawned", (run: RunResult) => { run.spawned = false; }],
+] as const)("rejects %s without a stop even if captured JSON is valid", async (_name, damage) => {
+  for (const op of [create(), list()]) {
+    const run = await capture(JSON.stringify(createdTab)); damage(run);
+    expect(run.stop).toBeUndefined();
+    await failure(op, run, "transport_failed", !run.spawned ? "not_attempted" : op.mutation ? "unknown" : "not_applicable");
   }
+});
+it("oversized stderr is a deliberate bounded-response failure, not silent ignored diagnostics", async () => {
+  await failure(create(), await capture(JSON.stringify(createdTab), "warning".repeat(160000)), "response_too_large", "unknown");
+});
+it("a mutation exit2 remains unknown after the CLI has spawned", async () => {
+  await failure(create(), await capture("", "invalid arguments", 2), "invalid_input", "unknown");
+});
+it("redacts longest overlapping values first, ignores empty values, and deduplicates", () => {
+  expect(redact("abc ab", ["ab", "abc", "", "abc"])).toBe("[redacted] [redacted]");
 });
 it("bounds all typed failures, including compiler errors and JSON-escaped control characters", () => {
   let error: unknown;
