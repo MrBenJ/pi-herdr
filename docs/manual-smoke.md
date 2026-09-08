@@ -17,11 +17,20 @@ Record these without credentials:
 - Permission to split/focus/close the **new test** pane/tab; workspace closure is separately approved or prohibited.
 - Checksums/snapshots for the separate managed lifecycle reporter and existing task/Todos storage, where present. Do not modify them to make this test pass.
 
-For the future aria-actions dogfood, use a **new workspace and new no-focus tab** for its approved cwd. Do not reuse an existing worker tab. Task-specific work in that repository needs its own instructions/authorization beyond this smoke.
+Do not use the interrupted `aria-actions` worktree as smoke-test material. A future repository-bound dogfood must reuse the sole canonical-repository workspace, create a new no-focus tab at `<repo>/.worktrees/<name>`, and receive separate explicit authorization.
 
-## Checklist
+## Orchestrator checks
 
-1. **Independent load.** Install this candidate locally and reload pi without requiring Todos. Confirm exactly `herdr_workspace`, `herdr_tab`, `herdr_pane`, and `herdr_agent` are discoverable. Registration alone must not create layout or contact/start a server.
+1. **No-mutation inspection.** With both entry points loaded, call `herdr_task inspect` for the candidate's canonical main checkout. Record canonical root, complete worktree inventory, matching workspace ID (if any), and violations. Confirm no workspace, worktree, tab, pane, or agent was created.
+2. **Disposable repository preparation.** Only after owner approval, create or select a disposable canonical Git repository, commit `/.worktrees/` in `.gitignore`, and record a non-default feature branch/name. Do not point the launch smoke at an active client or product repository.
+3. **Single launch.** Call `herdr_task launch` once. Verify the exact path is `<repo>/.worktrees/<name>`, one canonical repository workspace exists, one no-focus tab was created, one worker was started, and the original focus did not change.
+4. **Boundary observation.** Inspect the worker prompt/session without publishing it. Confirm it names the returned topology and forbids worktree/layout/subagent fan-out.
+5. **Failure preservation.** Do not manufacture a live ambiguous mutation. Use automated evidence for this behavior. If a real ambiguity occurs, stop, record confirmed handles, and obtain separate cleanup authorization; never retry automatically.
+6. **No automatic cleanup.** Leave all successful/partial resources in place until the owner explicitly authorizes exact branch/worktree/tab/agent cleanup.
+
+## Primitive checklist
+
+1. **Independent load.** Filter the package to `+src/index.ts`, reload pi without requiring Todos, and confirm exactly `herdr_workspace`, `herdr_tab`, `herdr_pane`, and `herdr_agent` are discoverable. Registration alone must not create layout or contact/start a server.
 2. **Read baseline.** Use list/inspect tools to record the original active context and the exact approved target workspace. Never derive IDs from numbers or examples in README.
 3. **Create no-focus tab.** Call `herdr_tab` create with the approved `workspaceId`, real `cwd`, and a harmless label. Record actual returned `tab.tab_id` and `root_pane.pane_id`. Verify the original active tab remains active.
 4. **Rename.** Rename only that recorded new tab using a label containing spaces. Inspect to verify only its label changed.

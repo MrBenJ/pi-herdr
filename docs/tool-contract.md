@@ -1,6 +1,6 @@
 # Tool contract
 
-Human-readable reference for the four agent-callable tools this package registers: `herdr_workspace`, `herdr_tab`, `herdr_pane`, `herdr_agent`. Each tool takes one flat object; `action` is always required. Fields not allowed by the chosen action are rejected, not silently ignored — this includes fields that are valid for a different action in the same tool.
+Human-readable reference for the five agent-callable tools this package registers across two entry points: primitive `herdr_workspace`, `herdr_tab`, `herdr_pane`, `herdr_agent`, and opinionated `herdr_task`. Each tool takes one flat object; `action` is always required. Fields not allowed by the chosen action are rejected, not silently ignored — this includes fields that are valid for a different action in the same tool.
 
 V1 controls only the Herdr server hosting the current pi session. Creation and splitting default to `--no-focus`. Every close requires an explicit target ID and `confirm: true`.
 
@@ -87,6 +87,36 @@ V1 controls only the Herdr server hosting the current pi session. Creation and s
 | close | tabId, confirm=true | — | yes |
 
 Use actual returned creation handles; do not derive IDs from a requested name or a numbering convention. `confirm: true` is trusted caller opt-in, not independent human authorization. Every destructive target remains explicit even in headless sessions.
+
+## `herdr_task`
+
+`herdr_task` is registered by `src/orchestrator/index.ts`; it remains separate from the primitive entry point.
+
+| Action | Required | Optional | Mutation? |
+|---|---|---|---|
+| inspect | repoRoot | — | no |
+| launch | repoRoot, worktreeName, branch, baseRef, tabLabel, agentName, agentKind, prompt | args | yes |
+
+`repoRoot` must be the absolute, real path of a canonical main checkout. Linked-worktree and nested-directory roots are rejected. `/.worktrees/` must already be ignored. `worktreeName` is a 1–80 character filename slug beginning with an alphanumeric; separators, dot segments, `.claude`, controls, whitespace, and leading dashes are rejected. The only derived path is `<repoRoot>/.worktrees/<worktreeName>`. Callers cannot submit `worktreePath`, `workspaceId`, `tabId`, `paneId`, or focus settings.
+
+Launch order is fixed and serial:
+
+1. validate repository, branch/ref/name, and ignore policy;
+2. inventory git worktrees and every Herdr workspace's pane CWDs;
+3. create or exactly reuse the branch at the derived path;
+4. reuse exactly one canonical-repository workspace, create one no-focus main-root workspace if none matches, or fail closed if multiple match;
+5. create one no-focus tab at the worktree;
+6. start one named worker in the returned root pane;
+7. submit a task prompt followed by the immutable topology boundary;
+8. return canonical paths and actual handles.
+
+An exact path/branch pair is reusable. A path-only, branch-only, filesystem, symlink, or default-branch collision fails without overwrite. No stage runs in parallel. No mutation is retried, rolled back, closed, removed, merged, or treated as task completion. Failures report every previously confirmed resource and whether the failed mutation's remote outcome is ambiguous.
+
+The final worker boundary names the canonical root, exact worktree, workspace, tab, pane, and agent; it forbids worktree/layout/agent creation, subagents, background work, and Todo-boundary rewrites. Caller prompt prose is untrusted and cannot replace the final boundary.
+
+While this entry point is loaded, a `tool_call` hook blocks direct `herdr_workspace create`, `herdr_tab create`, `herdr_pane split`, `herdr_agent start`, and recognizable Bash `git worktree add|move|remove` commands. Read/inspect/prompt/wait and explicitly confirmed close operations retain primitive behavior. The Bash classification is defense in depth, not a shell sandbox.
+
+For `todo add`/`todo update` calls explicitly tagged `enqueue`, the hook requires a prompt, rejects absolute filesystem paths outside the current canonical repository, and appends an idempotent repository boundary. Todo remains tracking-only and no foreign Todo store is opened or mutated.
 
 ## Errors
 

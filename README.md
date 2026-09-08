@@ -1,6 +1,6 @@
 # pi-herdr
 
-Agent-callable [pi](https://pi.dev) tools for controlling the **Herdr server hosting the current session**. Independently installable; no Todos, orchestrator, worker pool, or separate socket service required.
+Agent-callable [pi](https://pi.dev) tools for controlling the **Herdr server hosting the current session**. The package has two separate extension entry points: low-level Herdr primitives and an opinionated, repository-bound task orchestrator. It requires no worker pool or separate socket service.
 
 **Pre-release:** implementation is on [PR #1](https://github.com/MrBenJ/pi-herdr/pull/1). The default branch is not yet the implementation, and no release tag or npm publication is approved. Live worker/layout smoke testing remains an owner-run gate.
 
@@ -47,14 +47,37 @@ Registration/reload needs no running server. Context is checked when a tool is i
 | `herdr_tab` | list, inspect, create, rename, focus, close |
 | `herdr_pane` | list, inspect, split, run, send-text, send-keys, read, wait-output, focus-neighbor, close |
 | `herdr_agent` | list, inspect, start, rename, prompt, send-keys, read, wait, focus |
+| `herdr_task` | inspect, launch |
 
 The model discovers these registered tools normally. `pi.getAllTools()` exposes metadata to extensions; pi-herdr does **not** provide a public cross-extension execution API.
 
 Each tool takes a flat object with `action`; required and allowed fields vary by action. Unknown/inapplicable fields are rejected. See the complete [tool contract](docs/tool-contract.md).
 
-### One new tab per worker
+### Safe repository-bound launch
 
-First inspect/list to obtain actual workspace IDs. The following records illustrate tool names and inputs, not a generic router payload. **IDs and paths are examples:** replace them with the actual approved target and returned handles. Never predict IDs from their numbering.
+`herdr_task launch` is the default way to create worker topology. It accepts a canonical main-checkout `repoRoot`, a single `worktreeName`, branch/base ref, labels, worker kind/name, native args, and task prompt. It constructs exactly `<repoRoot>/.worktrees/<worktreeName>`; callers cannot supply a worktree path, workspace ID, tab ID, or pane ID.
+
+The launch is serial: validate repository → inventory git and Herdr → exactly create/reuse the worktree → reuse the sole matching workspace or create one no-focus workspace → create one no-focus tab → start one worker → submit the fixed boundary prompt. Duplicate matching workspaces fail closed. Partial resources remain after failure and are returned as confirmed handles; ambiguous mutations are never retried or cleaned up automatically. `/.worktrees/` must already be ignored.
+
+```json
+{"tool":"herdr_task","input":{"action":"inspect","repoRoot":"/absolute/project"}}
+{"tool":"herdr_task","input":{"action":"launch","repoRoot":"/absolute/project","worktreeName":"issue-123","branch":"feat/issue-123","baseRef":"main","tabLabel":"issue-123","agentName":"issue-123","agentKind":"pi","prompt":"Implement the approved plan and report evidence.","args":[]}}
+```
+
+While the orchestrator is loaded, its policy hook blocks direct Herdr topology creation/start calls and direct Bash `git worktree add|move|remove`. It also bounds Todo calls tagged `enqueue` to the current canonical repository and appends a repository execution footer. This is defense in depth, not a shell sandbox.
+
+To load only one layer, use Pi's package object filters in settings (paths are relative to this package):
+
+```json
+{"source":"/absolute/path/to/pi-herdr","extensions":["+src/index.ts"]}
+{"source":"/absolute/path/to/pi-herdr","extensions":["+src/orchestrator/index.ts"]}
+```
+
+The first enables primitive-only operation without orchestrator guards. The second exposes `herdr_task` and its guards; its internal low-level execution does not require model access to primitive tools.
+
+### Low-level primitive-only operation
+
+When `src/orchestrator/index.ts` is filtered out, inspect/list to obtain actual workspace IDs. The following records illustrate tool names and inputs, not a generic router payload. **IDs and paths are examples:** replace them with the actual approved target and returned handles. Never predict IDs from their numbering.
 
 ```json
 {"tool":"herdr_tab","input":{"action":"create","workspaceId":"w91","cwd":"/tmp/review","label":"reviewer"}}
@@ -75,7 +98,7 @@ Creation/splitting defaults to **no focus**. `focus: true` is explicit opt-in. C
 - Cancellation terminates only the local CLI/wait. It **does not terminate the remote agent**, undo a prompt, or close remote layout. Ambiguous mutations are never automatically retried.
 - Reads and output waits default to `visible`. Request `recent` or `recent-unwrapped` explicitly when needed. History cannot recover alternate-screen output Herdr never retained.
 - `idle`, `done`, `blocked`, and readiness are observations, not proof of task completion or approval. Inspect the actual response/review. Never automatically answer an approval dialog; sending keys requires deliberate authorization.
-- The package does not manage worktrees, ports, models, task queues, or the separate lifecycle reporter. Shutdown only disposes its own active local calls.
+- The primitive entry point does not manage worktrees, ports, models, task queues, or lifecycle reporting. The separate orchestrator manages only repo-local worktree/worker launch; it does not merge, clean up, retry, fan out, or claim task completion. Shutdown only disposes owned local calls.
 
 ## Output, errors, and private artifacts
 

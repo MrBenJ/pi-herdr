@@ -13,7 +13,7 @@ At implementation commit `b9fb447`:
 - `npm run verify`: typecheck clean; 328 unit/integration tests passed, 10 CLI tests skipped by default.
 - `npm run test:cli`: 10/10 passed with installed Herdr 0.8.2 against fake sockets only.
 - `npm pack --dry-run --json`: all 14 runtime source modules present; no bundled dependencies or test/private-artifact directories.
-- Real pi loader: sole explicit package, two reloads and repeated shutdown, no hosting environment or subprocess/capture creation.
+- Real pi loader: explicit package entry points, two reloads and repeated shutdown, no hosting environment or subprocess/capture creation.
 - Independent per-task reviews completed, with direct regression fixes and re-reviews. Task5's review requested extra line-only truncation/incomplete-capture tests; those were added with observed mutation failures before final approval.
 
 Task7 additionally tests loading a copy of the **packed source** with no package `node_modules`/devDependencies, not just the development checkout. Final command results, CI run URLs, reviewer identities and exact candidate SHAs belong in the PR evidence record so a documentation commit need not claim its own unknowable hash.
@@ -26,7 +26,12 @@ Task7 additionally tests loading a copy of the **packed source** with no package
 - [ ] Independent final Aria review of actual candidate PR, no unresolved blockers.
 - [ ] Accepted findings receive a regression test, observed failure, minimal fix, full verification and scoped re-review.
 - [ ] [Manual smoke](manual-smoke.md) explicitly authorized and completed on final affected behavior. **Currently not run.**
-- [ ] Package includes only intended source/docs/license; no private outputs, credentials, or unintended lifecycle scripts.
+- [ ] Package includes both intended source entry points and only intended source/docs/license; no private outputs, credentials, or unintended lifecycle scripts.
+- [ ] Automated regression proves duplicate canonical-repository workspaces fail closed instead of selecting or creating another.
+- [ ] Automated regression rejects sibling, `/tmp`, `.claude/worktrees`, symlink, branch-only, and path-only worktree placement/collisions.
+- [ ] Automated regression proves a valid `<repo>/.worktrees/<name>` launch creates exactly one no-focus tab and one worker with no retry or rollback.
+- [ ] Packed-package loading proves primitive and orchestrator entry points remain separately discoverable and filterable.
+- [ ] No-mutation `herdr_task inspect` evidence is recorded; any real launch smoke uses a separately approved disposable repository.
 - [ ] Owner reviews the final PR and explicitly approves shipping.
 
 ## After owner approval only
@@ -43,4 +48,4 @@ Use `pi remove` with the installed source, then `/reload`, or reinstall a previo
 
 ## Still deliberately outside this package
 
-No Todos execution API, worker orchestration, worktree/port/model policy, or managed lifecycle reporter replacement. Private `/jobs`, Jump and future `/btw` work are separate harness projects and must not enter the public package.
+Todo remains tracking-only; there is no Todo execution API or foreign-board mutation. The orchestrator supplies only one repository-bound launch transaction and guard layer: no worker pool, parallel fan-out, automatic cleanup, merge, port/model policy, shell sandbox, or managed lifecycle reporter replacement. Private `/jobs`, Jump and future `/btw` work are separate harness projects and must not enter the public package.

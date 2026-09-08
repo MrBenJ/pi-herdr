@@ -40,18 +40,26 @@ it("loads packed source without its devDependencies through real pi twice, with 
         await loader.reload();
         const loaded = loader.getExtensions();
         assert.deepEqual(loaded.errors, []);
-        assert.equal(loaded.extensions.length, 1);
-        const extension = loaded.extensions[0];
-        const names = [...extension.tools.keys()].sort();
-        assert.deepEqual(names, ['herdr_agent','herdr_pane','herdr_tab','herdr_workspace']);
-        assert.equal(extension.commands.size, 0);
-        await assert.rejects(extension.tools.get('herdr_workspace').definition.execute(
+        assert.equal(loaded.extensions.length, 2);
+        const byTools = [...loaded.extensions].sort((a, b) => [...a.tools.keys()].join(',').localeCompare([...b.tools.keys()].join(',')));
+        const primitive = byTools.find(extension => extension.tools.has('herdr_workspace'));
+        const orchestrator = byTools.find(extension => extension.tools.has('herdr_task'));
+        assert.ok(primitive); assert.ok(orchestrator);
+        const primitiveNames = [...primitive.tools.keys()].sort();
+        assert.deepEqual(primitiveNames, ['herdr_agent','herdr_pane','herdr_tab','herdr_workspace']);
+        assert.deepEqual([...orchestrator.tools.keys()], ['herdr_task']);
+        assert.equal(primitive.commands.size, 0); assert.equal(orchestrator.commands.size, 0);
+        await assert.rejects(primitive.tools.get('herdr_workspace').definition.execute(
           'fixture', { action: 'list' }, undefined, undefined, { cwd: root }), /missing_host/);
-        const handlers = extension.handlers.get('session_shutdown');
-        assert.equal(handlers.length, 1);
-        await handlers[0]({type:'session_shutdown', reason:'reload'}, {cwd:root});
-        await handlers[0]({type:'session_shutdown', reason:'reload'}, {cwd:root});
-        cycles.push(names);
+        assert.equal(primitive.handlers.get('session_shutdown').length, 1);
+        assert.equal(orchestrator.handlers.get('session_shutdown').length, 1);
+        assert.equal(orchestrator.handlers.get('tool_call').length, 1);
+        for (const extension of [primitive, orchestrator]) {
+          const handlers = extension.handlers.get('session_shutdown');
+          await handlers[0]({type:'session_shutdown', reason:'reload'}, {cwd:root});
+          await handlers[0]({type:'session_shutdown', reason:'reload'}, {cwd:root});
+        }
+        cycles.push([...primitiveNames, ...orchestrator.tools.keys()].sort());
       }
       assert.deepEqual(await fs.readdir(root), []);
       console.log(JSON.stringify(cycles));
@@ -66,7 +74,7 @@ it("loads packed source without its devDependencies through real pi twice, with 
 
 it("declares the standalone pi source entry and unbundled core peers, with no install hooks or execution API", async () => {
   const pkg = JSON.parse(await fs.readFile("package.json", "utf8"));
-  expect(pkg.pi).toEqual({ extensions: ["./src/index.ts"] });
+  expect(pkg.pi).toEqual({ extensions: ["./src/index.ts", "./src/orchestrator/index.ts"] });
   expect(pkg.peerDependencies).toEqual({ "@earendil-works/pi-coding-agent": "*", "@earendil-works/pi-ai": "*", typebox: "*" });
   expect(pkg.dependencies ?? {}).toEqual({});
   for (const hook of ["preinstall", "install", "postinstall", "prepare", "prepack", "postpack"]) expect(pkg.scripts[hook]).toBeUndefined();
@@ -74,7 +82,7 @@ it("declares the standalone pi source entry and unbundled core peers, with no in
 });
 it("packs the source entry and all runtime modules, not tests, dependencies or private artifacts", async () => {
   const files = await packedFiles();
-  for (const file of ["src/index.ts", "src/execute.ts", "src/contracts.ts", "src/errors.ts", "src/context.ts", "src/results.ts", "src/transport/capture.ts", "src/transport/runner.ts", "src/actions/index.ts", "src/actions/shared.ts", "src/actions/workspace.ts", "src/actions/tab.ts", "src/actions/pane.ts", "src/actions/agent.ts"]) expect(files).toContain(file);
+  for (const file of ["src/index.ts", "src/execute.ts", "src/contracts.ts", "src/errors.ts", "src/context.ts", "src/results.ts", "src/transport/capture.ts", "src/transport/runner.ts", "src/actions/index.ts", "src/actions/shared.ts", "src/actions/workspace.ts", "src/actions/tab.ts", "src/actions/pane.ts", "src/actions/agent.ts", "src/orchestrator/index.ts", "src/orchestrator/contracts.ts", "src/orchestrator/errors.ts", "src/orchestrator/repository.ts", "src/orchestrator/herdr-inventory.ts", "src/orchestrator/prompt.ts", "src/orchestrator/launch.ts", "src/orchestrator/guards.ts"]) expect(files).toContain(file);
   expect(files).toContain("LICENSE"); expect(files).toContain("package.json");
   for (const file of ["README.md", "docs/compatibility.md", "docs/tool-contract.md", "docs/manual-smoke.md", "docs/release-checklist.md"]) expect(files).toContain(file);
   expect(files.some(file => /^(tests|node_modules|\.superpowers|\.worktrees|coverage)\//.test(file))).toBe(false);
