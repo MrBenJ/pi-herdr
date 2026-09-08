@@ -52,10 +52,21 @@ export interface LaunchResources {
   promptSubmitted: boolean;
 }
 
+export interface WorktreeInventoryEntry {
+  path: string;
+  head: string;
+  branch?: string;
+  detached: boolean;
+}
+
 export interface LaunchResult {
   action: "inspect" | "launch";
   repository: RepositoryIdentity;
   resources: LaunchResources;
+  inventory: {
+    worktrees: WorktreeInventoryEntry[];
+    workspace?: WorkspaceMatch;
+  };
   violations: string[];
 }
 
