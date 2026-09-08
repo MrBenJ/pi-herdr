@@ -25,18 +25,22 @@ export async function cleanupCaptured(result: RunResult): Promise<void> {
 }
 
 type Shutdown = (event: SessionShutdownEvent, context: ExtensionContext) => void | Promise<void>;
-export function registrationHarness() {
+type Handler = (...args: unknown[]) => unknown;
+export function registrationHarness(options: { allowedEvents?: string[] } = {}) {
+  const allowedEvents = new Set(options.allowedEvents ?? ["session_shutdown"]);
   const tools = new Map<string, ToolDefinition>();
-  const shutdown: Shutdown[] = [];
+  const handlers = new Map<string, Handler[]>([...allowedEvents].map(event => [event, []]));
   const registerTool: ExtensionAPI["registerTool"] = tool => {
     if (tools.has(tool.name)) throw new Error(`Duplicate tool: ${tool.name}`);
     tools.set(tool.name, tool as ToolDefinition);
   };
   const surface = {
     registerTool,
-    on(event: string, handler: Shutdown) {
-      if (event !== "session_shutdown") throw new Error(`Unexpected lifecycle hook: ${event}`);
-      shutdown.push(handler);
+    on(event: string, handler: Handler) {
+      if (!allowedEvents.has(event)) throw new Error(`Unexpected lifecycle hook: ${event}`);
+      const eventHandlers = handlers.get(event) ?? [];
+      eventHandlers.push(handler);
+      handlers.set(event, eventHandlers);
     },
   };
   const api = new Proxy(surface, {
@@ -45,5 +49,6 @@ export function registrationHarness() {
       return Reflect.get(target, property);
     },
   }) as unknown as ExtensionAPI;
-  return { api, tools, shutdown };
+  const shutdown = (handlers.get("session_shutdown") ?? []) as Shutdown[];
+  return { api, tools, handlers, shutdown };
 }

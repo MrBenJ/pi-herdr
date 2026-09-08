@@ -1,3 +1,11 @@
+export const HERDR_AGENT_KINDS = Object.freeze([
+  "pi", "claude", "codex", "gemini", "cursor", "devin", "agy", "cline", "omp",
+  "mastracode", "opencode", "copilot", "kimi", "kiro", "droid", "amp", "grok",
+  "hermes", "kilo", "qodercli", "qwen", "maki",
+] as const);
+
+export type HerdrAgentKind = (typeof HERDR_AGENT_KINDS)[number];
+
 export type Group = "workspace" | "tab" | "pane" | "agent";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };

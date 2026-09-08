@@ -1,17 +1,12 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
+import { HERDR_AGENT_KINDS as KINDS } from "../contracts.ts";
 import type { Input, Operation } from "../contracts.ts";
 import { HerdrToolError } from "../errors.ts";
 import { assertAllowed, assertRecord, boolean, buildOperation, keysArray, readFlags, requiredString, timeout } from "./shared.ts";
 
 const DEADLINE_MS = 30000;
 const WAIT_DRAIN_MS = 1000;
-
-const KINDS = [
-  "pi", "claude", "codex", "gemini", "cursor", "devin", "agy", "cline", "omp",
-  "mastracode", "opencode", "copilot", "kimi", "kiro", "droid", "amp", "grok",
-  "hermes", "kilo", "qodercli", "qwen", "maki",
-] as const;
 
 const STATES = ["idle", "working", "blocked", "done", "unknown"] as const;
 

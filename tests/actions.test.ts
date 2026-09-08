@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Value } from "typebox/value";
+import { HERDR_AGENT_KINDS } from "../src/contracts.ts";
 import type { Input, Operation } from "../src/contracts.ts";
 import { assertAllowed, boolean, envFlags, readFlags, requiredString, timeout } from "../src/actions/shared.ts";
 import { compileTab, TabSchema } from "../src/actions/tab.ts";
@@ -641,6 +642,10 @@ describe("compileAgent argv table", () => {
 });
 
 describe("compileAgent validation edge cases", () => {
+  it.each(HERDR_AGENT_KINDS)("accepts the shared agent kind %s", kind => {
+    expect(compileAgent({ action: "start", name: "reviewer", kind, paneId: "w9:p7" }).argv).toContain(kind);
+  });
+
   it("rejects an invalid agent kind", () => {
     expect(() => compileAgent({ action: "start", name: "reviewer", kind: "bogus", paneId: "w9:p7" })).toThrow(/invalid_input/);
   });
