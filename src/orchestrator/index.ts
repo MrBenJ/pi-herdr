@@ -66,6 +66,25 @@ export function validateTaskInput(value: unknown): TaskInput {
   };
 }
 
+export function formatInspectResult(result: Awaited<ReturnType<typeof inspectTask>>): string {
+  const workspace = result.inventory.workspace;
+  const worktrees = result.inventory.worktrees.length > 0
+    ? result.inventory.worktrees.map(entry => `- ${entry.path} [${entry.branch ?? "detached"}] @ ${entry.head}`).join("\n")
+    : "- none";
+  const violations = result.violations.length > 0
+    ? `\n${result.violations.map(violation => `- ${violation}`).join("\n")}`
+    : " none";
+  return [
+    "Repository inspection",
+    `Repository: ${result.repository.repoRoot}`,
+    `Workspace: ${workspace?.workspaceId ?? "none"}`,
+    `Panes: ${workspace?.paneIds.join(", ") || "none"}`,
+    "Worktrees:",
+    worktrees,
+    `Violations:${violations}`,
+  ].join("\n");
+}
+
 function dependencies(pi: ExtensionAPI, runner: ReturnType<typeof createRunner>): OrchestratorDependencies {
   return {
     git: async (command, args, options) => pi.exec(command, args, { cwd: options.cwd, timeout: options.deadlineMs, signal: options.signal }),
@@ -105,7 +124,7 @@ export default function orchestrator(pi: ExtensionAPI): void {
           }
         }
         const text = input.action === "inspect"
-          ? `Repository inspection complete: ${result.repository.repoRoot}`
+          ? formatInspectResult(result)
           : `Worker launched in ${result.resources.worktree?.path ?? result.repository.repoRoot} (${result.resources.workspace?.workspaceId}/${result.resources.tab?.tabId}/${result.resources.agent?.name}).`;
         return { content: [{ type: "text", text }], details: result };
       } catch (error) {

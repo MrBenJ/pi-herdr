@@ -8,7 +8,7 @@ Agent-callable [pi](https://pi.dev) tools for controlling the **Herdr server hos
 
 Requirements: Herdr CLI **0.8.2** on `PATH`, pi **0.85.1**, and Node **>=22.19.0**. The measured local baseline is macOS arm64 / Node 26.8.1. See [compatibility](docs/compatibility.md) for the distinction between tested behavior and supported input vocabulary.
 
-Review the source first: pi extensions execute with your user's system access.
+Review the source first: pi extensions execute with your user's system access. Before installing a candidate, run `pi list` and ensure only one pi-herdr checkout will register the primitive tools. Two locally installed worktrees are distinct package sources to Pi and will conflict on `herdr_workspace`, `herdr_tab`, `herdr_pane`, and `herdr_agent`; remove the older checkout or filter one package to a non-overlapping entry point before reloading.
 
 From a local checkout containing the implementation:
 

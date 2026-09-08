@@ -4,6 +4,8 @@
 
 Run only after the owner approves the concrete hosting-server targets and commands below. A supplied workspace is not automatically disposable property: closing it needs separate authorization. Never repurpose an existing user/Claude session or select a different server as a shortcut.
 
+Before loading a candidate, run `pi list`. Remove or filter out every older pi-herdr checkout so only one source registers each primitive tool. Start a fresh Pi process and confirm there are no extension-conflict diagnostics before testing worker launch; an agent-start failure caused by duplicate package sources is invalid environment evidence and must be corrected before rerunning the affected test.
+
 ## Authorization record
 
 Record these without credentials:

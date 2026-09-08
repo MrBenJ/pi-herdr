@@ -80,6 +80,14 @@ it("declares the standalone pi source entry and unbundled core peers, with no in
   for (const hook of ["preinstall", "install", "postinstall", "prepare", "prepack", "postpack"]) expect(pkg.scripts[hook]).toBeUndefined();
   expect(pkg.bin).toBeUndefined(); expect(pkg.main).toBeUndefined(); expect(pkg.exports).toBeUndefined();
 });
+it("documents duplicate-checkout preflight before candidate installation", async () => {
+  const readme = await fs.readFile("README.md", "utf8");
+  const smoke = await fs.readFile("docs/manual-smoke.md", "utf8");
+  expect(readme).toContain("pi list");
+  expect(readme).toContain("only one pi-herdr checkout");
+  expect(smoke).toContain("Remove or filter out every older pi-herdr checkout");
+});
+
 it("packs the source entry and all runtime modules, not tests, dependencies or private artifacts", async () => {
   const files = await packedFiles();
   for (const file of ["src/index.ts", "src/execute.ts", "src/contracts.ts", "src/errors.ts", "src/context.ts", "src/results.ts", "src/transport/capture.ts", "src/transport/runner.ts", "src/actions/index.ts", "src/actions/shared.ts", "src/actions/workspace.ts", "src/actions/tab.ts", "src/actions/pane.ts", "src/actions/agent.ts", "src/orchestrator/index.ts", "src/orchestrator/contracts.ts", "src/orchestrator/errors.ts", "src/orchestrator/repository.ts", "src/orchestrator/herdr-inventory.ts", "src/orchestrator/prompt.ts", "src/orchestrator/launch.ts", "src/orchestrator/guards.ts"]) expect(files).toContain(file);
