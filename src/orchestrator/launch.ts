@@ -30,22 +30,22 @@ function augment(error: unknown, resources: LaunchResources): never {
 }
 
 function object(value: Json | undefined, stage: string): { [key: string]: Json } {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new OrchestratorError({ code: "herdr_failed", message: `Herdr returned malformed data during ${stage}.`, stage });
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new OrchestratorError({ code: "herdr_failed", message: `Herdr returned malformed data during ${stage}.`, stage, ambiguous: true });
   return value;
 }
 
 function mutationResult(result: ToolResult, group: "workspace" | "tab" | "agent", action: string, expectedType: string, stage: string): { [key: string]: Json } {
   if (result.details.group !== group || result.details.action !== action || result.details.truncated || result.details.resultOmitted) {
-    throw new OrchestratorError({ code: "herdr_failed", message: `Herdr returned incomplete data during ${stage}.`, stage });
+    throw new OrchestratorError({ code: "herdr_failed", message: `Herdr returned incomplete data during ${stage}.`, stage, ambiguous: true });
   }
   const value = object(result.details.result, stage);
-  if (value["type"] !== expectedType) throw new OrchestratorError({ code: "herdr_failed", message: `Herdr returned an unexpected result during ${stage}.`, stage });
+  if (value["type"] !== expectedType) throw new OrchestratorError({ code: "herdr_failed", message: `Herdr returned an unexpected result during ${stage}.`, stage, ambiguous: true });
   return value;
 }
 
 function idFrom(parent: Json, key: string, stage: string): string {
   const value = object(parent, stage)[key];
-  if (typeof value !== "string" || !value) throw new OrchestratorError({ code: "herdr_failed", message: `Herdr omitted ${key} during ${stage}.`, stage });
+  if (typeof value !== "string" || !value) throw new OrchestratorError({ code: "herdr_failed", message: `Herdr omitted ${key} during ${stage}.`, stage, ambiguous: true });
   return value;
 }
 
@@ -94,13 +94,13 @@ export async function launchTask(input: TaskLaunchInput, deps: OrchestratorDepen
     const initialWorktrees = await inspectWorktrees(repository, deps.git, signal);
     const herdrInventory = await inventoryHerdr(repository, deps, signal);
     const existingWorkspace = selectWorkspace(herdrInventory);
+    if (existingWorkspace) resources.workspace = { workspaceId: existingWorkspace.workspaceId, disposition: "existing" };
 
     resources.worktree = await ensureWorktree({ worktreeName: input.worktreeName, branch: input.branch, baseRef: input.baseRef }, repository, deps, signal);
 
     let workspace: WorkspaceMatch;
     if (existingWorkspace) {
       workspace = existingWorkspace;
-      resources.workspace = { workspaceId: workspace.workspaceId, disposition: "existing" };
     } else {
       const response = await herdrMutation(deps, repository, "workspace", { action: "create", cwd: repository.repoRoot, label: path.basename(repository.repoRoot), focus: false }, "workspace-create", resources, signal);
       const result = mutationResult(response, "workspace", "create", "workspace_created", "workspace-create");
@@ -119,7 +119,7 @@ export async function launchTask(input: TaskLaunchInput, deps: OrchestratorDepen
     const startResult = mutationResult(startResponse, "agent", "start", "agent_started", "agent-start");
     const startedAgent = object(startResult["agent"], "agent-start");
     if (startedAgent["name"] !== input.agentName || startedAgent["pane_id"] !== paneId) {
-      throw new OrchestratorError({ code: "herdr_failed", message: "Herdr started an agent with unexpected identity.", stage: "agent-start" });
+      throw new OrchestratorError({ code: "herdr_failed", message: "Herdr started an agent with unexpected identity.", stage: "agent-start", ambiguous: true });
     }
     resources.agent = { name: input.agentName, paneId };
 
@@ -137,7 +137,7 @@ export async function launchTask(input: TaskLaunchInput, deps: OrchestratorDepen
     const promptResult = mutationResult(promptResponse, "agent", "prompt", "agent_prompted", "agent-prompt");
     const promptedAgent = object(promptResult["agent"], "agent-prompt");
     if (promptedAgent["name"] !== input.agentName || promptedAgent["pane_id"] !== paneId) {
-      throw new OrchestratorError({ code: "herdr_failed", message: "Herdr prompted an agent with unexpected identity.", stage: "agent-prompt" });
+      throw new OrchestratorError({ code: "herdr_failed", message: "Herdr prompted an agent with unexpected identity.", stage: "agent-prompt", ambiguous: true });
     }
     resources.promptSubmitted = true;
 

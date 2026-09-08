@@ -91,7 +91,7 @@ export type HerdrExecutor = (
 
 export interface PathOps {
   realpath(path: string): Promise<string>;
-  lstat(path: string): Promise<{ isSymbolicLink(): boolean }>;
+  lstat(path: string): Promise<{ isSymbolicLink(): boolean; isDirectory(): boolean }>;
   access(path: string): Promise<void>;
 }
 

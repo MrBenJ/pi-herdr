@@ -75,7 +75,7 @@ async function paneBelongsToRepository(cwd: string, repository: RepositoryIdenti
   cancelled(signal);
   const canonicalCwd = await deps.paths.realpath(cwd);
   const response = await deps.git("git", ["rev-parse", "--git-common-dir"], { cwd: canonicalCwd, deadlineMs: ORCHESTRATOR_DEADLINE_MS, signal });
-  if (response.code !== 0) return false;
+  if (response.code !== 0) throw new Error("Pane CWD is not a Git repository.");
   const commonPath = path.resolve(canonicalCwd, response.stdout.trim());
   const canonicalCommon = await deps.paths.realpath(commonPath);
   return canonicalCommon === repository.gitCommonDir;
@@ -93,7 +93,6 @@ export async function inventoryHerdr(repository: RepositoryIdentity, deps: Orche
     for (const pane of listedPanes) {
       try {
         if (await paneBelongsToRepository(pane.cwd, repository, deps, signal)) matchingPaneIds.push(pane.paneId);
-        else violations.push(`workspace ${workspaceId} pane ${pane.paneId} has no matching canonical git repository`);
       } catch (error) {
         if (error instanceof OrchestratorError && error.code === "cancelled") throw error;
         violations.push(`workspace ${workspaceId} pane ${pane.paneId} has no canonical git repository`);

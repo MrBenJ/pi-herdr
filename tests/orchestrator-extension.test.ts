@@ -4,14 +4,21 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { HERDR_AGENT_KINDS } from "../src/contracts.ts";
 import type { Runner } from "../src/contracts.ts";
 import orchestrator, { TaskSchema, validateTaskInput } from "../src/orchestrator/index.ts";
+import { launchTask } from "../src/orchestrator/launch.ts";
 import { createRunner } from "../src/transport/runner.ts";
 import { registrationHarness } from "./support/harness.ts";
 
 vi.mock("../src/transport/runner.ts", () => ({ createRunner: vi.fn() }));
+vi.mock("../src/orchestrator/launch.ts", () => ({ inspectTask: vi.fn(), launchTask: vi.fn() }));
+
+const launchInput = { action: "launch" as const, repoRoot: "/repo", worktreeName: "x", branch: "feat/x", baseRef: "main", tabLabel: "x", agentName: "worker", agentKind: "pi" as const, prompt: "work", args: [] };
+const launchResult = { action: "launch" as const, repository: { repoRoot: "/repo", gitCommonDir: "/repo/.git", defaultBranch: "main", worktreeRoot: "/repo/.worktrees" }, resources: { worktree: { path: "/repo/.worktrees/x", branch: "feat/x", head: "abc", disposition: "created" as const }, workspace: { workspaceId: "wE", disposition: "existing" as const }, tab: { tabId: "wE:t2", paneId: "wE:p2" }, agent: { name: "worker", paneId: "wE:p2" }, promptSubmitted: true }, inventory: { worktrees: [] }, violations: [] };
 
 beforeEach(() => {
   vi.mocked(createRunner).mockReset();
   vi.mocked(createRunner).mockReturnValue({ run: vi.fn<Runner>(), dispose: vi.fn(async () => {}) });
+  vi.mocked(launchTask).mockReset();
+  vi.mocked(launchTask).mockResolvedValue(launchResult);
 });
 
 it("exports the one frozen Herdr agent-kind list", () => {
@@ -42,6 +49,21 @@ it("runtime validation rejects action-inapplicable and missing fields before dep
   expect(() => validateTaskInput({ action: "inspect", repoRoot: "/repo", branch: "x" })).toThrow();
   expect(() => validateTaskInput({ action: "launch", repoRoot: "/repo" })).toThrow();
   expect(() => validateTaskInput({ action: "launch", repoRoot: "/repo", worktreeName: "x", branch: "feat/x", baseRef: "main", tabLabel: "x", agentName: "worker", agentKind: "bogus", prompt: "work" })).toThrow();
+});
+
+it("rejects a concurrent launch within one extension instance", async () => {
+  let release!: (value: typeof launchResult) => void;
+  vi.mocked(launchTask).mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+  const harness = registrationHarness({ allowedEvents: ["tool_call", "session_shutdown"] });
+  orchestrator(harness.api);
+  const tool = harness.tools.get("herdr_task")!;
+  const context = { cwd: "/repo" } as ExtensionContext;
+  const first = tool.execute("first", launchInput, undefined, undefined, context);
+  await Promise.resolve();
+  await expect(tool.execute("second", launchInput, undefined, undefined, context)).rejects.toThrow(/launch.*progress/i);
+  expect(launchTask).toHaveBeenCalledTimes(1);
+  release(launchResult);
+  await expect(first).resolves.toMatchObject({ details: { action: "launch" } });
 });
 
 it("separate instances dispose only their own runner and never remote resources", async () => {

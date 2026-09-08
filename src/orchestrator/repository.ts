@@ -103,7 +103,7 @@ export async function validateRepository(repoRoot: string, deps: OrchestratorDep
   if (ignored.code !== 0) fail("worktree_policy", `The repository must ignore /${WORKTREE_DIR}/ before orchestration.`, "worktree-policy");
   const worktreeRoot = path.join(requested, WORKTREE_DIR);
   const rootStat = await existingLstat(deps, worktreeRoot);
-  if (rootStat?.isSymbolicLink()) fail("worktree_policy", `/${WORKTREE_DIR}/ may not be a symbolic link.`, "worktree-policy");
+  if (rootStat && (rootStat.isSymbolicLink() || !rootStat.isDirectory())) fail("worktree_policy", `/${WORKTREE_DIR}/ must be a real directory when it exists.`, "worktree-policy");
 
   return { repoRoot: requested, gitCommonDir: commonDir, defaultBranch, worktreeRoot };
 }
@@ -147,13 +147,13 @@ export async function ensureWorktree(input: EnsureWorktreeInput, repository: Rep
   const entries = await inspectWorktrees(repository, deps.git, signal);
   const atPath = entries.find(entry => entry.path === desired);
   const onBranch = entries.find(entry => entry.branch === input.branch);
+  const stat = await existingLstat(deps, desired);
+  if (stat?.isSymbolicLink()) fail("worktree_policy", "The requested worktree path may not be a symbolic link.", "worktree-policy");
   if (atPath && atPath.branch === input.branch) {
+    if (!stat?.isDirectory()) fail("worktree_collision", "The registered exact worktree path is missing or is not a directory.", "worktree-policy");
     return { path: desired, branch: input.branch, head: atPath.head, disposition: "existing" };
   }
   if (atPath || onBranch) fail("worktree_collision", "The requested branch or exact worktree path is already registered elsewhere.", "worktree-policy");
-
-  const stat = await existingLstat(deps, desired);
-  if (stat?.isSymbolicLink()) fail("worktree_policy", "The requested worktree path may not be a symbolic link.", "worktree-policy");
   if (stat) fail("worktree_collision", "The requested worktree path exists but is not a registered worktree.", "worktree-policy");
 
   cancellation(signal, "worktree-create");

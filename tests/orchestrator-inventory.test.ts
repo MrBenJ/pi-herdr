@@ -75,6 +75,16 @@ it("matches root and linked-worktree pane CWDs to one canonical repository", asy
   expect(calls).toEqual([["workspace", { action: "list" }], ["pane", { action: "list", workspaceId: "wE" }]]);
 });
 
+it("ignores valid unrelated repositories without reporting a violation", async () => {
+  const { repository } = await makeRepo();
+  const { repository: unrelated } = await makeRepo();
+  const inventory = await inventoryHerdr(repository, dependencies([
+    workspaceList(["w1"]), paneList("w1", [{ pane_id: "w1:p1", cwd: unrelated.repoRoot }]),
+  ], []));
+  expect(selectWorkspace(inventory)).toBeUndefined();
+  expect(inventory.violations).toEqual([]);
+});
+
 it("ignores unrelated workspaces and records missing or non-git pane paths", async () => {
   const { repository } = await makeRepo(); const calls: Array<[string, Record<string, unknown>]> = [];
   const outside = await fs.mkdtemp(path.join(os.tmpdir(), "pi-herdr-unrelated-")); cleanup.push(outside);

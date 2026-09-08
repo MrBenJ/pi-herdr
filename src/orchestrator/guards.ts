@@ -58,7 +58,13 @@ function mutatesWorktrees(words: string[]): boolean {
     while (words[index] && (isAssignment(words[index]!) || words[index]!.startsWith("-"))) index++;
   }
   while (words[index] && isAssignment(words[index]!)) index++;
-  if (words[index] !== "git") return false;
+  const executable = path.posix.basename(words[index] ?? "");
+  if (["sh", "bash", "zsh"].includes(executable)) {
+    const commandOption = words.findIndex((word, optionIndex) => optionIndex > index && /^-[^-]*c/.test(word));
+    const nested = commandOption >= 0 ? words[commandOption + 1] : undefined;
+    return typeof nested === "string" && containsWorktreeMutation(nested);
+  }
+  if (executable !== "git") return false;
   index++;
   while (index < words.length) {
     const word = words[index]!;

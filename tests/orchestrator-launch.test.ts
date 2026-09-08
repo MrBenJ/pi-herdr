@@ -46,7 +46,7 @@ const createdWorkspace = () => tool("workspace", "create", { type: "workspace_cr
 const createdTab = (workspaceId: string) => tool("tab", "create", { type: "tab_created", tab: { tab_id: `${workspaceId}:t2` }, root_pane: { pane_id: `${workspaceId}:p2` } });
 const agentResult = (type: "agent_started" | "agent_prompted", paneId: string) => tool("agent", type === "agent_started" ? "start" : "prompt", { type, agent: { name: "reviewer", pane_id: paneId } });
 
-function deps(queue: Array<ReturnType<typeof tool> | Error>, calls: Array<[string, Record<string, unknown>]>): OrchestratorDependencies {
+function deps(queue: Array<ReturnType<typeof tool> | Error>, calls: Array<[string, Record<string, unknown>]>, gitRunner: GitRunner = git): OrchestratorDependencies {
   const herdr: HerdrExecutor = async (group, input) => {
     calls.push([group, input]);
     const next = queue.shift();
@@ -54,7 +54,7 @@ function deps(queue: Array<ReturnType<typeof tool> | Error>, calls: Array<[strin
     if (next instanceof Error) throw next;
     return next;
   };
-  return { git, herdr, paths: { realpath: fs.realpath, lstat: fs.lstat, access: fs.access }, env: { HERDR_ENV: "1" } };
+  return { git: gitRunner, herdr, paths: { realpath: fs.realpath, lstat: fs.lstat, access: fs.access }, env: { HERDR_ENV: "1" } };
 }
 
 function request(root: string): TaskLaunchInput {
@@ -92,6 +92,18 @@ it("creates one no-focus main-repository workspace only when inventory has no ma
   expect(calls.filter(([group, input]) => group === "agent" && input.action === "start")).toHaveLength(1);
 });
 
+it("preserves the inventoried workspace when worktree creation is ambiguous", async () => {
+  const { root } = await makeRepo(false); const calls: Array<[string, Record<string, unknown>]> = [];
+  const failingGit: GitRunner = async (command, args, options) => args[0] === "worktree" && args[1] === "add"
+    ? { code: 1, stdout: "", stderr: "timed out", killed: true }
+    : git(command, args, options);
+  await expect(launchTask(request(root), deps([workspaceList(["wE"]), paneList("wE", root)], calls, failingGit))).rejects.toMatchObject({
+    code: "git_failed", stage: "worktree-create", ambiguous: true,
+    confirmed: { workspace: { workspaceId: "wE", disposition: "existing" }, promptSubmitted: false },
+  });
+  expect(calls).toHaveLength(2);
+});
+
 it("stops after an ambiguous tab failure, preserves confirmed resources, and never retries or cleans up", async () => {
   const { root } = await makeRepo(); const calls: Array<[string, Record<string, unknown>]> = [];
   const failure = new HerdrToolError({ kind: "transport_failed", message: "secret prompt and args", remoteOutcome: "unknown" });
@@ -102,6 +114,15 @@ it("stops after an ambiguous tab failure, preserves confirmed resources, and nev
   expect(calls.filter(([group, input]) => group === "tab" && input.action === "create")).toHaveLength(1);
   expect(calls.some(([, input]) => ["close", "remove"].includes(String(input.action)))).toBe(false);
   try { await launchTask(request(root), deps([workspaceList(["wE"]), paneList("wE", root), failure], [])); } catch (error) { expect((error as Error).message).not.toContain("secret"); }
+});
+
+it("treats malformed success data after a mutation as ambiguous", async () => {
+  const { root } = await makeRepo();
+  const malformed = tool("tab", "create", { type: "tab_created", tab: {}, root_pane: {} });
+  await expect(launchTask(request(root), deps([workspaceList(["wE"]), paneList("wE", root), malformed], []))).rejects.toMatchObject({
+    stage: "tab-create", ambiguous: true,
+    confirmed: { worktree: expect.any(Object), workspace: expect.any(Object), promptSubmitted: false },
+  });
 });
 
 it("reports each later confirmed stage when agent prompt fails", async () => {

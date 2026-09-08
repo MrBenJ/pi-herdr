@@ -78,6 +78,7 @@ function dependencies(pi: ExtensionAPI, runner: ReturnType<typeof createRunner>)
 export default function orchestrator(pi: ExtensionAPI): void {
   const runner = createRunner();
   const deps = dependencies(pi, runner);
+  let launchInProgress = false;
   pi.registerTool({
     name: "herdr_task",
     label: "Herdr task",
@@ -91,9 +92,18 @@ export default function orchestrator(pi: ExtensionAPI): void {
     execute: async (_id, rawInput, signal, _update, ctx) => {
       try {
         const input = validateTaskInput(rawInput);
-        const result = input.action === "inspect"
-          ? await inspectTask(input, deps, signal)
-          : await launchTask(input, deps, signal);
+        let result;
+        if (input.action === "inspect") {
+          result = await inspectTask(input, deps, signal);
+        } else {
+          if (launchInProgress) invalid("A herdr_task launch is already in progress in this extension instance.");
+          launchInProgress = true;
+          try {
+            result = await launchTask(input, deps, signal);
+          } finally {
+            launchInProgress = false;
+          }
+        }
         const text = input.action === "inspect"
           ? `Repository inspection complete: ${result.repository.repoRoot}`
           : `Worker launched in ${result.resources.worktree?.path ?? result.repository.repoRoot} (${result.resources.workspace?.workspaceId}/${result.resources.tab?.tabId}/${result.resources.agent?.name}).`;

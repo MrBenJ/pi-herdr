@@ -96,6 +96,17 @@ describe("worktree naming and reconciliation", () => {
     await expect(ensureWorktree({ worktreeName: "main-copy", branch: "main", baseRef: "main" }, repository, deps())).rejects.toMatchObject({ code: "invalid_input" });
   });
 
+  it("rejects a registered exact worktree replaced by a symlink", async () => {
+    const root = await makeRepo();
+    const repository = await validateRepository(root, deps());
+    const desired = path.join(root, ".worktrees", "registered-link");
+    await exec("git", ["worktree", "add", desired, "-b", "feat/registered-link"], { cwd: root });
+    await fs.rm(desired, { recursive: true, force: true });
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "pi-herdr-registered-escape-")); cleanup.push(outside);
+    await fs.symlink(outside, desired);
+    await expect(ensureWorktree({ worktreeName: "registered-link", branch: "feat/registered-link", baseRef: "main" }, repository, deps())).rejects.toMatchObject({ code: "worktree_policy" });
+  });
+
   it("rejects symlink escapes, missing base refs, and pre-cancellation without mutation", async () => {
     const root = await makeRepo();
     const repository = await validateRepository(root, deps());

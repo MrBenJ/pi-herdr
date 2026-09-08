@@ -47,6 +47,8 @@ it.each([
   "git -C /repo worktree add /repo/.worktrees/x -b x",
   "command git worktree move old new",
   "env FOO=1 git worktree remove old",
+  "/usr/bin/git worktree add .worktrees/x -b x",
+  "bash -lc 'git worktree remove old'",
   "echo safe\ngit worktree add .worktrees/x -b x",
 ])("blocks direct Bash worktree mutation: %s", async command => {
   await expect(guardToolCall(event("bash", { command }), { cwd: "/repo" }, dependencies())).resolves.toMatchObject({ block: true });
