@@ -84,7 +84,7 @@
   - `GitRunner`, `HerdrExecutor`, `PathOps`, `OrchestratorDependencies`.
   - `OrchestratorError` with `code`, `message`, `stage`, `confirmed`, and `ambiguous`.
 
-- [ ] **Step 1: Write the failing shared-kind and registration tests**
+- [x] **Step 1: Write the failing shared-kind and registration tests**
 
 Add `tests/orchestrator-extension.test.ts` with assertions that the orchestrator module can import a single `HERDR_AGENT_KINDS` source and that a future orchestrator factory registers one `herdr_task` tool plus one `tool_call` hook without registering primitive tools.
 
@@ -113,7 +113,7 @@ it("registers only the orchestration tool and its policy hook", () => {
 
 Temporarily import `orchestrator` only after creating a minimal module stub if Vitest cannot collect a missing import. The first executable RED state must fail because the exported tuple, harness support, and orchestrator module do not exist—not because of malformed test syntax.
 
-- [ ] **Step 2: Run the focused tests and confirm RED**
+- [x] **Step 2: Run the focused tests and confirm RED**
 
 Run:
 
@@ -123,7 +123,7 @@ npm test -- tests/orchestrator-extension.test.ts tests/actions.test.ts
 
 Expected: failure naming the missing orchestrator module or `HERDR_AGENT_KINDS`. Record the exact failure in the implementation notes.
 
-- [ ] **Step 3: Export the shared Herdr agent-kind tuple**
+- [x] **Step 3: Export the shared Herdr agent-kind tuple**
 
 In `src/contracts.ts`, add:
 
@@ -145,7 +145,7 @@ import { HERDR_AGENT_KINDS as KINDS } from "../contracts.ts";
 
 Do not alter `AgentSchema`, validation text, or generated argv. Extend the existing agent-kind assertions in `tests/actions.test.ts` to prove the public schema still accepts every value and rejects a nonmember.
 
-- [ ] **Step 4: Generalize the registration harness without weakening it**
+- [x] **Step 4: Generalize the registration harness without weakening it**
 
 Change `registrationHarness()` to:
 
@@ -163,7 +163,7 @@ export function registrationHarness(options: { allowedEvents?: string[] } = {}) 
 
 Keep the Proxy that throws on unexpected Pi API access. Existing primitive extension tests must pass unchanged.
 
-- [ ] **Step 5: Define explicit orchestrator contracts**
+- [x] **Step 5: Define explicit orchestrator contracts**
 
 Create `src/orchestrator/contracts.ts` with these exact public shapes:
 
@@ -263,7 +263,7 @@ export interface OrchestratorDependencies {
 
 Use `Json` only for helpers that parse `details.result`; remove the import if the final module does not need it.
 
-- [ ] **Step 6: Define bounded orchestrator errors**
+- [x] **Step 6: Define bounded orchestrator errors**
 
 Create `src/orchestrator/errors.ts`:
 
@@ -305,11 +305,11 @@ export class OrchestratorError extends Error {
 
 Add `formatOrchestratorError(error)` returning JSON text capped below 8 KiB and excluding raw stderr, environment, native args, and prompt content.
 
-- [ ] **Step 7: Add the minimal orchestrator entry-point skeleton**
+- [x] **Step 7: Add the minimal orchestrator entry-point skeleton**
 
 Create `src/orchestrator/index.ts` with a default factory that registers a temporary `herdr_task` definition and `tool_call`/`session_shutdown` handlers. The temporary tool must throw `OrchestratorError({ code: "invalid_input", message: "Orchestrator implementation is not wired.", stage: "validate" })`; it must not execute git or Herdr. Later tasks replace the skeleton.
 
-- [ ] **Step 8: Run focused and primitive regression tests**
+- [x] **Step 8: Run focused and primitive regression tests**
 
 Run:
 
@@ -320,7 +320,7 @@ npm run typecheck
 
 Expected: all selected tests pass and the primitive tool registration remains exactly four tools.
 
-- [ ] **Step 9: Commit Task 1**
+- [x] **Step 9: Commit Task 1**
 
 ```sh
 git add src/contracts.ts src/actions/agent.ts src/orchestrator/contracts.ts src/orchestrator/errors.ts src/orchestrator/index.ts tests/support/harness.ts tests/actions.test.ts tests/orchestrator-extension.test.ts
@@ -345,11 +345,11 @@ git commit -m "feat(orchestrator): define bounded task contracts"
   - `inspectWorktrees(repository, git, signal): Promise<RegisteredWorktree[]>`.
   - `ensureWorktree(request, repository, deps, signal): Promise<WorktreeState>`.
 
-- [ ] **Step 1: Create temporary-repository test helpers**
+- [x] **Step 1: Create temporary-repository test helpers**
 
 In `tests/orchestrator-repository.test.ts`, implement `makeRepo()` using `fs.mkdtemp`, `git init -b main`, local test identity configuration, one committed file, and `.gitignore` containing `/.worktrees/`. Return `{ root, cleanup }`. Invoke git through `execFile`, never shell strings.
 
-- [ ] **Step 2: Write failing canonical-root tests**
+- [x] **Step 2: Write failing canonical-root tests**
 
 Add tests asserting:
 
@@ -363,11 +363,11 @@ expect((await validateRepository(root, deps)).worktreeRoot).toBe(path.join(root,
 
 Also remove the `.gitignore` entry in one fixture and assert a `worktree_policy` error naming `/.worktrees/` without modifying `.gitignore`.
 
-- [ ] **Step 3: Write failing worktree-name and path tests**
+- [x] **Step 3: Write failing worktree-name and path tests**
 
 Accept `pi-harness`, `fix_123`, and `review.2`. Reject empty strings, `.`, `..`, `a/b`, `a\\b`, `/tmp/x`, `.claude`, leading `-`, whitespace, control characters, and names longer than 80 characters. Assert `desiredWorktreePath` always returns `path.join(root, ".worktrees", acceptedName)`.
 
-- [ ] **Step 4: Write failing exact-reuse and collision tests**
+- [x] **Step 4: Write failing exact-reuse and collision tests**
 
 Cover:
 
@@ -381,7 +381,7 @@ Cover:
 - nonexistent `baseRef` → `git_failed` before mutation;
 - aborted signal → `cancelled` before mutation.
 
-- [ ] **Step 5: Run the repository tests and confirm RED**
+- [x] **Step 5: Run the repository tests and confirm RED**
 
 ```sh
 npm test -- tests/orchestrator-repository.test.ts
@@ -389,7 +389,7 @@ npm test -- tests/orchestrator-repository.test.ts
 
 Expected: collection or assertion failures because `repository.ts` is absent.
 
-- [ ] **Step 6: Implement repository command helpers**
+- [x] **Step 6: Implement repository command helpers**
 
 In `repository.ts`, add one private helper:
 
@@ -405,7 +405,7 @@ async function gitChecked(
 
 It checks `signal.aborted`, calls `git("git", args, { cwd, deadlineMs: 30_000, signal })`, requires `code === 0`, trims stdout only where a scalar is expected, and throws a bounded `git_failed` error without reflecting arbitrary stderr.
 
-- [ ] **Step 7: Implement canonical main-checkout validation**
+- [x] **Step 7: Implement canonical main-checkout validation**
 
 `validateRepository` must:
 
@@ -419,7 +419,7 @@ It checks `signal.aborted`, calls `git("git", args, { cwd, deadlineMs: 30_000, s
 
 Do not create directories in validation.
 
-- [ ] **Step 8: Parse `git worktree list --porcelain` deterministically**
+- [x] **Step 8: Parse `git worktree list --porcelain` deterministically**
 
 Add:
 
@@ -434,7 +434,7 @@ export interface RegisteredWorktree {
 
 Parse blank-line-separated records. Require one `worktree` and one `HEAD` line per record. Normalize `branch refs/heads/x` to `x`. Reject malformed records as `git_failed`; do not silently drop them.
 
-- [ ] **Step 9: Implement exact worktree reconciliation**
+- [x] **Step 9: Implement exact worktree reconciliation**
 
 `ensureWorktree` validates branch/ref before filesystem mutation, compares canonical inventory, and invokes exactly:
 
@@ -448,7 +448,7 @@ await git("git", ["worktree", "add", desiredPath, "-b", branch, baseRef], {
 
 After successful creation, rerun worktree inventory and require the exact path/branch record. Return its HEAD. If add returns an ambiguous timeout/cancellation result under the chosen GitRunner representation, throw with `ambiguous: true`; never retry or remove the path.
 
-- [ ] **Step 10: Run repository tests and typecheck**
+- [x] **Step 10: Run repository tests and typecheck**
 
 ```sh
 npm test -- tests/orchestrator-repository.test.ts
@@ -457,7 +457,7 @@ npm run typecheck
 
 Expected: all repository tests pass.
 
-- [ ] **Step 11: Commit Task 2**
+- [x] **Step 11: Commit Task 2**
 
 ```sh
 git add src/orchestrator/contracts.ts src/orchestrator/repository.ts tests/orchestrator-repository.test.ts
@@ -480,7 +480,7 @@ git commit -m "feat(orchestrator): enforce repo-local worktrees"
   - `inventoryHerdr(repository, deps, signal): Promise<HerdrInventory>`.
   - `selectWorkspace(inventory): WorkspaceMatch | undefined`.
 
-- [ ] **Step 1: Define fixture result builders**
+- [x] **Step 1: Define fixture result builders**
 
 In `tests/orchestrator-inventory.test.ts`, create helpers returning low-level `ToolResult` values for:
 
@@ -491,7 +491,7 @@ paneList([{ pane_id: "wE:p1", workspace_id: "wE", cwd: repoRoot }]);
 
 Include `details: { group, action, result, truncated: false }`. Use a queued fake `HerdrExecutor` that records `(group,input)` pairs.
 
-- [ ] **Step 2: Write failing inventory tests**
+- [x] **Step 2: Write failing inventory tests**
 
 Cover:
 
@@ -506,7 +506,7 @@ Cover:
 - pane CWD missing/deleted/non-git → recorded as an inventory violation, not matched;
 - cancellation between workspace list and pane list → `cancelled` and no later calls.
 
-- [ ] **Step 3: Run inventory tests and confirm RED**
+- [x] **Step 3: Run inventory tests and confirm RED**
 
 ```sh
 npm test -- tests/orchestrator-inventory.test.ts
@@ -514,11 +514,11 @@ npm test -- tests/orchestrator-inventory.test.ts
 
 Expected: failure because `herdr-inventory.ts` does not exist.
 
-- [ ] **Step 4: Add strict result extractors**
+- [x] **Step 4: Add strict result extractors**
 
 Implement private extractors that accept both the documented result envelope keys and fail on unexpected shapes. Do not infer IDs from labels or numbering. Reject `resultOmitted`, `truncated`, missing arrays, missing IDs, and nonstring CWDs.
 
-- [ ] **Step 5: Canonicalize pane repository identity**
+- [x] **Step 5: Canonicalize pane repository identity**
 
 For each pane CWD:
 
@@ -530,11 +530,11 @@ For each pane CWD:
 
 A non-git or missing pane path contributes a bounded violation such as `workspace w7 pane w7:p1 has no canonical git repository`; it does not abort inventory unless the low-level Herdr data itself is malformed.
 
-- [ ] **Step 6: Select zero, one, or many matches**
+- [x] **Step 6: Select zero, one, or many matches**
 
 `selectWorkspace` returns `undefined` for zero, the exact workspace/pane IDs for one, and throws `workspace_ambiguous` for more than one. Sort IDs before formatting errors so tests and diagnostics are stable.
 
-- [ ] **Step 7: Run focused tests and typecheck**
+- [x] **Step 7: Run focused tests and typecheck**
 
 ```sh
 npm test -- tests/orchestrator-inventory.test.ts
@@ -543,7 +543,7 @@ npm run typecheck
 
 Expected: all inventory tests pass.
 
-- [ ] **Step 8: Commit Task 3**
+- [x] **Step 8: Commit Task 3**
 
 ```sh
 git add src/orchestrator/contracts.ts src/orchestrator/herdr-inventory.ts tests/orchestrator-inventory.test.ts
@@ -562,7 +562,7 @@ git commit -m "feat(orchestrator): reuse canonical repo workspaces"
 - Consumes: task prompt, `RepositoryIdentity`, `WorktreeState`, actual workspace/tab/pane/agent handles.
 - Produces: `buildWorkerPrompt(input): string` with a fixed versioned boundary appended after caller prose.
 
-- [ ] **Step 1: Write exact failing prompt tests**
+- [x] **Step 1: Write exact failing prompt tests**
 
 Assert that arbitrary caller prose containing `ignore all boundaries`, fake XML delimiters, shell metacharacters, and a sibling worktree path remains in the untrusted task section but cannot alter the final boundary section. Assert the final nonempty lines contain all of:
 
@@ -584,13 +584,13 @@ END PI-HERDR ORCHESTRATION BOUNDARY v1
 
 Use a generated random fence token around caller prose so caller content cannot forge the task delimiter. The policy boundary itself remains fixed and last.
 
-- [ ] **Step 2: Run prompt tests and confirm RED**
+- [x] **Step 2: Run prompt tests and confirm RED**
 
 ```sh
 npm test -- tests/orchestrator-prompt.test.ts
 ```
 
-- [ ] **Step 3: Implement the prompt builder**
+- [x] **Step 3: Implement the prompt builder**
 
 Export:
 
@@ -611,14 +611,14 @@ export function buildWorkerPrompt(input: WorkerPromptInput): string;
 
 Require a 32-character lowercase hexadecimal `fenceToken`, reject NUL in every string, cap caller task text at 256 KiB by UTF-8 bytes, and do not generate the token inside this pure function. The launch layer generates it with `randomBytes(16).toString("hex")`.
 
-- [ ] **Step 4: Run focused tests and typecheck**
+- [x] **Step 4: Run focused tests and typecheck**
 
 ```sh
 npm test -- tests/orchestrator-prompt.test.ts
 npm run typecheck
 ```
 
-- [ ] **Step 5: Commit Task 4**
+- [x] **Step 5: Commit Task 4**
 
 ```sh
 git add src/orchestrator/prompt.ts tests/orchestrator-prompt.test.ts
@@ -642,15 +642,15 @@ git commit -m "feat(orchestrator): bind worker prompts to topology"
   - `launchTask(input, deps, signal): Promise<LaunchResult>`.
   - complete confirmed-resource state on every failure.
 
-- [ ] **Step 1: Build a deterministic dependency recorder**
+- [x] **Step 1: Build a deterministic dependency recorder**
 
 In `tests/orchestrator-launch.test.ts`, define injected fakes that append records to one ordered `calls` array. Provide complete success fixtures for workspace list, pane lists, workspace creation, tab creation, agent start, and agent prompt. Do not invoke real git or Herdr.
 
-- [ ] **Step 2: Write the failing read-only inspect test**
+- [x] **Step 2: Write the failing read-only inspect test**
 
 Assert `inspectTask` calls repository validation and Herdr inventory but never invokes `git worktree add`, workspace create, tab create, agent start, or agent prompt. Its result includes repository identity, current exact worktrees, matching workspace, and inventory violations.
 
-- [ ] **Step 3: Write the failing existing-workspace launch test**
+- [x] **Step 3: Write the failing existing-workspace launch test**
 
 For an exact existing worktree and one existing workspace, assert the ordered mutation tail is:
 
@@ -664,7 +664,7 @@ For an exact existing worktree and one existing workspace, assert the ordered mu
 
 Assert there is no workspace-create call and no second worker.
 
-- [ ] **Step 4: Write the failing no-workspace launch test**
+- [x] **Step 4: Write the failing no-workspace launch test**
 
 For zero matching workspaces, assert exactly one:
 
@@ -679,11 +679,11 @@ For zero matching workspaces, assert exactly one:
 
 Use the returned workspace ID for the tab. Do not use the workspace creation's root pane as the worker pane; the worker belongs to the worktree tab created next.
 
-- [ ] **Step 5: Write failing worktree-create and exact-reuse tests**
+- [x] **Step 5: Write failing worktree-create and exact-reuse tests**
 
 Assert creation occurs before any Herdr mutation, exact reuse performs no git mutation, and collision errors perform no Herdr calls.
 
-- [ ] **Step 6: Write one failure test for every mutation boundary**
+- [x] **Step 6: Write one failure test for every mutation boundary**
 
 Cover failure after:
 
@@ -703,17 +703,17 @@ For each, assert:
 - `ambiguous` is true when the underlying failure's `remoteOutcome` is `unknown`;
 - prompt content and native args are absent from the thrown public error.
 
-- [ ] **Step 7: Write cancellation tests at every pre-call checkpoint**
+- [x] **Step 7: Write cancellation tests at every pre-call checkpoint**
 
 Abort before launch and between each stage using a fake that aborts the controller after returning. Assert no subsequent call occurs and existing confirmed resources remain reported without cleanup.
 
-- [ ] **Step 8: Run launch tests and confirm RED**
+- [x] **Step 8: Run launch tests and confirm RED**
 
 ```sh
 npm test -- tests/orchestrator-launch.test.ts
 ```
 
-- [ ] **Step 9: Implement strict Herdr result readers**
+- [x] **Step 9: Implement strict Herdr result readers**
 
 Add local helpers in `launch.ts` for extracting:
 
@@ -724,28 +724,28 @@ Add local helpers in `launch.ts` for extracting:
 
 Reuse the low-level normalized details. Reject omitted/truncated/malformed results and preserve underlying `HerdrToolError.failure.remoteOutcome` when wrapping.
 
-- [ ] **Step 10: Implement `inspectTask`**
+- [x] **Step 10: Implement `inspectTask`**
 
 Return read-only inventory. Include all registered `.worktrees` records and a matching workspace summary in the result type; update `LaunchResult` with an explicit `inventory` field rather than hiding this data in text.
 
-- [ ] **Step 11: Implement `launchTask` serially**
+- [x] **Step 11: Implement `launchTask` serially**
 
 Use one mutable `resources: LaunchResources = { promptSubmitted: false }` owned by the function. After each confirmed stage, replace the relevant field. Check cancellation immediately before every mutating call. Never use `Promise.all` for launch stages.
 
 Generate the fence token only immediately before building the final prompt. Mark `promptSubmitted: true` only after a successful low-level prompt response.
 
-- [ ] **Step 12: Format bounded successful results**
+- [x] **Step 12: Format bounded successful results**
 
 Return concise text with canonical worktree path and actual IDs, plus structured details. Do not return the worker prompt or native args in details. Keep text under existing package output limits.
 
-- [ ] **Step 13: Run focused tests and typecheck**
+- [x] **Step 13: Run focused tests and typecheck**
 
 ```sh
 npm test -- tests/orchestrator-launch.test.ts tests/orchestrator-inventory.test.ts tests/orchestrator-repository.test.ts tests/orchestrator-prompt.test.ts
 npm run typecheck
 ```
 
-- [ ] **Step 14: Commit Task 5**
+- [x] **Step 14: Commit Task 5**
 
 ```sh
 git add src/orchestrator/contracts.ts src/orchestrator/errors.ts src/orchestrator/launch.ts tests/orchestrator-launch.test.ts
@@ -769,7 +769,7 @@ git commit -m "feat(orchestrator): launch one bounded worker"
   - `guardToolCall(event, ctx, dependencies): Promise<BlockResult | undefined>`.
   - fully wired `herdr_task` tool.
 
-- [ ] **Step 1: Write failing schema tests**
+- [x] **Step 1: Write failing schema tests**
 
 Use `Value.Check` to assert:
 
@@ -779,7 +779,7 @@ Use `Value.Check` to assert:
 - unknown fields, `focus`, caller-supplied `workspaceId`, `tabId`, `paneId`, and `worktreePath` fail schema validation;
 - `args` accepts literal strings but rejects nonstrings.
 
-- [ ] **Step 2: Write failing direct-mutation guard tests**
+- [x] **Step 2: Write failing direct-mutation guard tests**
 
 Call the captured `tool_call` handler with events for:
 
@@ -794,7 +794,7 @@ Each returns `{ block: true, reason: expect.stringContaining("herdr_task") }`.
 
 Assert list/inspect/read/prompt/wait/focus/rename/send-text/send-keys/close calls are not blocked. Close retains its primitive explicit-confirm behavior.
 
-- [ ] **Step 3: Write failing Bash guard tests**
+- [x] **Step 3: Write failing Bash guard tests**
 
 Block commands matching case-sensitive executable forms with whitespace/newline boundaries:
 
@@ -816,7 +816,7 @@ rg 'git worktree add' docs
 
 Implement a conservative tokenizer for direct command segments rather than a broad substring regex. If the tokenizer cannot classify a segment that invokes `worktree add|move|remove`, prefer blocking. Document that this is defense in depth, not a shell sandbox.
 
-- [ ] **Step 4: Write failing Todo enqueue guard tests**
+- [x] **Step 4: Write failing Todo enqueue guard tests**
 
 For `todo add` and `todo update`:
 
@@ -831,13 +831,13 @@ For `todo add` and `todo update`:
 
 Absolute-path extraction must recognize POSIX paths beginning `/` and reject NUL. It must ignore `https://` URLs. Do not attempt to mutate another repository's Todo store.
 
-- [ ] **Step 5: Run guard tests and confirm RED**
+- [x] **Step 5: Run guard tests and confirm RED**
 
 ```sh
 npm test -- tests/orchestrator-guards.test.ts tests/orchestrator-extension.test.ts
 ```
 
-- [ ] **Step 6: Implement `TaskSchema` and dependency construction**
+- [x] **Step 6: Implement `TaskSchema` and dependency construction**
 
 In `src/orchestrator/index.ts`, define a strict union-compatible object schema using `StringEnum` for actions and kinds. Because Google-compatible schemas avoid unsupported literal unions, use one object with optional fields plus explicit action-specific runtime validation before any dependency call. Reject unknown/inapplicable fields using a dedicated validator patterned after `assertAllowed`.
 
@@ -849,7 +849,7 @@ Construct:
 
 No subprocess or filesystem work occurs at extension load.
 
-- [ ] **Step 7: Wire `herdr_task inspect` and `launch`**
+- [x] **Step 7: Wire `herdr_task inspect` and `launch`**
 
 The registered tool description must say:
 
@@ -859,11 +859,11 @@ Safely inspect or launch one repository-bound worker. The orchestrator derives t
 
 Add tool-specific prompt guidelines naming `herdr_task` explicitly. Execute with the tool's `signal`, not `ctx.signal`. Throw formatted errors so Pi marks the tool result failed.
 
-- [ ] **Step 8: Implement direct-tool/Bash guards**
+- [x] **Step 8: Implement direct-tool/Bash guards**
 
 Register one `tool_call` handler in the orchestrator entry point. It must not block its own internal direct function calls because those do not emit model tool calls. In headless mode it blocks identically; there is no UI bypass.
 
-- [ ] **Step 9: Implement Todo boundary mutation**
+- [x] **Step 9: Implement Todo boundary mutation**
 
 Resolve the current canonical repo using read-only git. If canonicalization fails, block an enqueued task rather than guessing. Mutate only `event.input.prompt`; do not add fields outside Todo's schema. Include:
 
@@ -876,18 +876,18 @@ Use herdr_task launch for execution topology.
 END REPOSITORY EXECUTION BOUNDARY v1
 ```
 
-- [ ] **Step 10: Prove factory isolation and disposal**
+- [x] **Step 10: Prove factory isolation and disposal**
 
 Extend `tests/orchestrator-extension.test.ts` with two factory instances. Each owns one runner and disposal handler. Repeated shutdown is safe and never closes remote resources. Registration performs no git/Herdr subprocess and no Todo write.
 
-- [ ] **Step 11: Run focused tests and typecheck**
+- [x] **Step 11: Run focused tests and typecheck**
 
 ```sh
 npm test -- tests/orchestrator-guards.test.ts tests/orchestrator-extension.test.ts tests/extension.test.ts
 npm run typecheck
 ```
 
-- [ ] **Step 12: Commit Task 6**
+- [x] **Step 12: Commit Task 6**
 
 ```sh
 git add src/orchestrator/index.ts src/orchestrator/guards.ts tests/orchestrator-guards.test.ts tests/orchestrator-extension.test.ts
@@ -911,7 +911,7 @@ git commit -m "feat(orchestrator): block topology bypasses"
 - Consumes: completed primitive and orchestrator entry points.
 - Produces: packed package containing both, real Pi discovery proof, filtering instructions, and operator verification procedures.
 
-- [ ] **Step 1: Write failing package-discovery tests**
+- [x] **Step 1: Write failing package-discovery tests**
 
 Change the manifest expectation to:
 
@@ -925,7 +925,7 @@ Update the real Pi resource-loader test to expect two extension resources. Asser
 
 Assert the packed file list includes every `src/orchestrator/*.ts` file and excludes tests, `.superpowers`, `.worktrees`, captures, and Todo stores.
 
-- [ ] **Step 2: Run package tests and confirm RED**
+- [x] **Step 2: Run package tests and confirm RED**
 
 ```sh
 npm test -- tests/package.test.ts
@@ -933,7 +933,7 @@ npm test -- tests/package.test.ts
 
 Expected: manifest/discovery failures because only the primitive entry point is declared.
 
-- [ ] **Step 3: Update the package manifest**
+- [x] **Step 3: Update the package manifest**
 
 Set:
 
@@ -948,7 +948,7 @@ Set:
 
 Keep current peer/dev dependencies, scripts, license, and package name. The existing `files: ["src", ...]` entry already includes orchestrator modules; verify rather than broadening it.
 
-- [ ] **Step 4: Update README architecture and installation sections**
+- [x] **Step 4: Update README architecture and installation sections**
 
 Document:
 
@@ -964,13 +964,13 @@ Document:
 
 Remove or qualify existing README statements that the package has “no orchestrator” while preserving the statement for the primitive entry point.
 
-- [ ] **Step 5: Update the tool contract**
+- [x] **Step 5: Update the tool contract**
 
 Add a separate section for `herdr_task`. Include action tables, required fields, forbidden caller topology fields, path/name constraints, exact ordered transaction, zero/one/many workspace behavior, prompt envelope, guard matrix, Todo hook, cancellation, and non-atomic failure semantics.
 
 Do not rewrite primitive action tables except to link to the optional orchestrator guard behavior.
 
-- [ ] **Step 6: Update compatibility and smoke documentation**
+- [x] **Step 6: Update compatibility and smoke documentation**
 
 `docs/compatibility.md` records:
 
@@ -984,7 +984,7 @@ Do not rewrite primitive action tables except to link to the optional orchestrat
 
 `docs/release-checklist.md` adds tests for duplicate workspace refusal, sibling-path refusal, one-worker behavior, packed dual entry points, and primitive-only package filtering.
 
-- [ ] **Step 7: Run package/docs checks**
+- [x] **Step 7: Run package/docs checks**
 
 ```sh
 npm test -- tests/package.test.ts tests/orchestrator-extension.test.ts
@@ -994,7 +994,7 @@ rg -n "no Todos, orchestrator|does not manage worktrees" README.md docs package.
 
 Every remaining old-scope phrase must explicitly refer to the primitive entry point rather than the package as a whole.
 
-- [ ] **Step 8: Commit Task 7**
+- [x] **Step 8: Commit Task 7**
 
 ```sh
 git add package.json tests/package.test.ts README.md docs/tool-contract.md docs/compatibility.md docs/manual-smoke.md docs/release-checklist.md
@@ -1013,7 +1013,7 @@ git commit -m "docs(orchestrator): package the safe policy layer"
 - Consumes: complete feature branch.
 - Produces: fresh focused/full test evidence, clean diff, no-mutation Herdr inspection evidence, and a review-ready branch.
 
-- [ ] **Step 1: Run formatting and placeholder scans**
+- [x] **Step 1: Run formatting and placeholder scans**
 
 ```sh
 git diff --check origin/main...HEAD
@@ -1023,7 +1023,7 @@ rg -n '\b(TBD|TODO|FIXME|implement later|fill in details|similar to Task)\b' \
 
 Investigate every hit. Existing historical prose outside the changed scope may remain only when it is not an implementation placeholder.
 
-- [ ] **Step 2: Run all focused orchestrator tests in one process**
+- [x] **Step 2: Run all focused orchestrator tests in one process**
 
 ```sh
 npm test -- \
@@ -1038,7 +1038,7 @@ npm test -- \
 
 Expected: all pass, no skipped orchestrator test.
 
-- [ ] **Step 3: Run primitive regression tests**
+- [x] **Step 3: Run primitive regression tests**
 
 ```sh
 npm test -- \
@@ -1054,7 +1054,7 @@ npm test -- \
 
 Expected: all pass with primitive tool schemas and result behavior unchanged.
 
-- [ ] **Step 4: Run full verification from a clean command invocation**
+- [x] **Step 4: Run full verification from a clean command invocation**
 
 ```sh
 npm run verify
@@ -1062,7 +1062,7 @@ npm run verify
 
 Expected: TypeScript succeeds and the entire Vitest suite passes.
 
-- [ ] **Step 5: Verify package contents**
+- [x] **Step 5: Verify package contents**
 
 ```sh
 npm pack --dry-run --json --ignore-scripts > /tmp/pi-herdr-pack.json
@@ -1077,11 +1077,11 @@ NODE
 rm -f /tmp/pi-herdr-pack.json
 ```
 
-- [ ] **Step 6: Perform a no-mutation Herdr smoke inspection only**
+- [x] **Step 6: Perform a no-mutation Herdr smoke inspection only**
 
 Use `herdr_task inspect` against the canonical `pi-herdr` repository. Record the returned canonical root, existing workspace match, and violations. Do not call `launch`, create a disposable workspace, create a tab, or alter an existing worker during this smoke.
 
-- [ ] **Step 7: Review the branch manually without a subagent**
+- [x] **Step 7: Review the branch manually without a subagent**
 
 Run:
 
@@ -1109,7 +1109,7 @@ Review for:
 
 Fix each concrete defect in its owning module, rerun its focused test, then rerun `npm run verify`.
 
-- [ ] **Step 8: Commit final verification-only corrections if needed**
+- [x] **Step 8: Commit final verification-only corrections if needed**
 
 If Step 7 required code/doc changes:
 
@@ -1120,11 +1120,11 @@ git commit -m "fix(orchestrator): address final verification findings"
 
 If no files changed, do not create an empty commit.
 
-- [ ] **Step 9: Move the board task to human review**
+- [x] **Step 9: Move the board task to human review**
 
 Update Todo task `31be6d` with the exact test commands/results and ensure its testplan remains present. Advance it from `in-progress` to `agent-review`, perform this session's serial self-review evidence, then advance to `human-review`. Do not mark it done; the human owns final verification.
 
-- [ ] **Step 10: Report completion evidence**
+- [x] **Step 10: Report completion evidence**
 
 Report:
 
