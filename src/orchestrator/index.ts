@@ -1,10 +1,12 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { HERDR_AGENT_KINDS } from "../contracts.ts";
 import { execute } from "../execute.ts";
 import { createRunner } from "../transport/runner.ts";
+import { WORKTREE_DIR } from "./contracts.ts";
 import type { OrchestratorDependencies, TaskInput, TaskLaunchInput } from "./contracts.ts";
 import { formatOrchestratorError, OrchestratorError } from "./errors.ts";
 import { guardToolCall } from "./guards.ts";
@@ -54,9 +56,9 @@ export function validateTaskInput(value: unknown): TaskInput {
   if (!/^[a-z][a-z0-9_-]{0,31}$/.test(agentName)) invalid("agentName does not match the Herdr name pattern.");
   const piProfile = input.piProfile;
   if (piProfile !== undefined) {
-    if (!isPiProfileName(piProfile)) invalid(`piProfile must be a logical profile name matching ${PI_PROFILE_PATTERN}.`);
+    if (!isPiProfileName(piProfile)) invalid(`piProfile must be a logical pi-profile name matching ${PI_PROFILE_PATTERN}, with hyphens only between alphanumerics and no pi-profile command or device name.`);
     if (agentKind !== "pi") invalid("piProfile is valid only when agentKind is pi.");
-    try { buildProfileCommand(piProfile, (args ?? []) as string[]); } catch { invalid("args are too large for a profiled launch."); }
+    try { buildProfileCommand(piProfile, path.resolve(validateString(input, "repoRoot"), WORKTREE_DIR, validateString(input, "worktreeName")), (args ?? []) as string[]); } catch (error) { if (error instanceof OrchestratorError) throw error; invalid("args are too large for a profiled launch."); }
   }
   const prompt = validateString(input, "prompt", true);
   if (Buffer.byteLength(prompt, "utf8") > 256 * 1024) invalid("prompt exceeds the 256 KiB orchestration limit.");

@@ -3,7 +3,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Json, ToolResult } from "../contracts.ts";
 import { HerdrToolError } from "../errors.ts";
-import { PROFILE_POLL_INTERVAL_MS, PROFILE_READY_POLLS, PROFILE_STARTUP_DEADLINE_MS } from "./contracts.ts";
+import { WORKTREE_DIR, PROFILE_POLL_INTERVAL_MS, PROFILE_READY_POLLS, PROFILE_STARTUP_DEADLINE_MS } from "./contracts.ts";
 import type { LaunchResources, LaunchResult, OrchestratorDependencies, RepositoryIdentity, TaskInspectInput, TaskLaunchInput, WorkspaceMatch } from "./contracts.ts";
 import { OrchestratorError } from "./errors.ts";
 import { inventoryHerdr, selectWorkspace } from "./herdr-inventory.ts";
@@ -88,6 +88,9 @@ async function findAgent(deps: OrchestratorDependencies, repository: RepositoryI
     result = await deps.herdr("agent", { action: "inspect", target }, { cwd: repository.repoRoot, env: deps.env, signal });
   } catch (error) {
     if (error instanceof HerdrToolError && error.failure.herdrCode === "agent_not_found") return undefined;
+    if (signal?.aborted || (error instanceof HerdrToolError && error.failure.kind === "cancelled")) {
+      throw new OrchestratorError({ code: "cancelled", message: "Orchestration was cancelled during a read.", stage });
+    }
     throw new OrchestratorError({ code: "herdr_failed", message: `Herdr failed during ${stage}.`, stage, ambiguous });
   }
   try {
@@ -117,10 +120,10 @@ async function startProfiledWorker(input: TaskLaunchInput & { piProfile: string 
   const attempts = Math.ceil(PROFILE_STARTUP_DEADLINE_MS / PROFILE_POLL_INTERVAL_MS);
   let ready = 0;
   for (let attempt = 0; ready < PROFILE_READY_POLLS; attempt++) {
+    if (attempt > 0) await pause(deps, signal);
     if (attempt >= attempts || Date.now() - started > PROFILE_STARTUP_DEADLINE_MS) {
       throw new OrchestratorError({ code: "herdr_failed", message: "No ready Pi worker was detected in the worker pane before the startup deadline.", stage: "profile-detect", ambiguous: true });
     }
-    if (attempt > 0) await pause(deps, signal);
     const agent = await findAgent(deps, repository, paneId, "profile-detect", resources, true, signal);
     if (agent && (agent["pane_id"] !== paneId || agent["agent"] !== "pi")) {
       throw new OrchestratorError({ code: "herdr_failed", message: "Herdr detected an unexpected agent in the worker pane.", stage: "profile-detect", ambiguous: true });
@@ -158,19 +161,26 @@ export async function inspectTask(input: TaskInspectInput, deps: OrchestratorDep
 export async function launchTask(input: TaskLaunchInput, deps: OrchestratorDependencies, signal?: AbortSignal): Promise<LaunchResult> {
   const resources: LaunchResources = { promptSubmitted: false };
   try {
-    let profileCommand: string | undefined;
+    const profileCommand = (piProfile: string, cwd: string): string => {
+      try {
+        return buildProfileCommand(piProfile, cwd, input.args ?? []);
+      } catch {
+        throw new OrchestratorError({ code: "invalid_input", message: "args or paths are not usable for a profiled launch.", stage: "validate" });
+      }
+    };
     if (input.piProfile !== undefined) {
       if (input.agentKind !== "pi" || !isPiProfileName(input.piProfile)) {
         throw new OrchestratorError({ code: "invalid_input", message: "piProfile must be a safe logical profile name and requires agentKind pi.", stage: "validate" });
       }
-      try {
-        profileCommand = buildProfileCommand(input.piProfile, input.args ?? []);
-      } catch {
-        throw new OrchestratorError({ code: "invalid_input", message: "args are not usable for a profiled launch.", stage: "validate" });
-      }
+      // Size and shape are checked against the derived path before any mutation.
+      profileCommand(input.piProfile, path.resolve(input.repoRoot, WORKTREE_DIR, input.worktreeName));
     }
     cancellation(signal, "repository", resources);
     const repository = await validateRepository(input.repoRoot, deps, signal);
+    // The caller's root may be a shorter alias of the canonical one, so the
+    // command that will really run is built and bounded here, before mutation.
+    const expectedWorktree = path.join(repository.worktreeRoot, input.worktreeName);
+    const launcherCommand = input.piProfile === undefined ? undefined : profileCommand(input.piProfile, expectedWorktree);
     const initialWorktrees = await inspectWorktrees(repository, deps.git, signal);
     const herdrInventory = await inventoryHerdr(repository, deps, signal);
     const existingWorkspace = selectWorkspace(herdrInventory);
@@ -183,6 +193,10 @@ export async function launchTask(input: TaskLaunchInput, deps: OrchestratorDepen
     }
 
     resources.worktree = await ensureWorktree({ worktreeName: input.worktreeName, branch: input.branch, baseRef: input.baseRef }, repository, deps, signal);
+
+    if (launcherCommand !== undefined && resources.worktree.path !== expectedWorktree) {
+      throw new OrchestratorError({ code: "worktree_policy", message: "The resolved worktree is not the directory the profiled command was built for.", stage: "worktree-verify" });
+    }
 
     let workspace: WorkspaceMatch;
     if (existingWorkspace) {
@@ -201,8 +215,8 @@ export async function launchTask(input: TaskLaunchInput, deps: OrchestratorDepen
     const paneId = idFrom(tabResult["root_pane"], "pane_id", "tab-create");
     resources.tab = { tabId, paneId };
 
-    if (input.piProfile !== undefined && profileCommand !== undefined) {
-      await startProfiledWorker({ ...input, piProfile: input.piProfile }, profileCommand, deps, repository, paneId, resources, signal);
+    if (input.piProfile !== undefined && launcherCommand !== undefined) {
+      await startProfiledWorker({ ...input, piProfile: input.piProfile }, launcherCommand, deps, repository, paneId, resources, signal);
     } else {
       const startResponse = await herdrMutation(deps, repository, "agent", { action: "start", name: input.agentName, kind: input.agentKind, paneId, args: input.args ?? [] }, "agent-start", resources, signal);
       const startResult = mutationResult(startResponse, "agent", "start", "agent_started", "agent-start");

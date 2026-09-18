@@ -8,6 +8,7 @@ import { HerdrToolError } from "../src/errors.ts";
 import type { GitRunner, HerdrExecutor, OrchestratorDependencies, TaskLaunchInput } from "../src/orchestrator/contracts.ts";
 import { formatOrchestratorError } from "../src/orchestrator/errors.ts";
 import { inspectTask, launchTask } from "../src/orchestrator/launch.ts";
+import { buildProfileCommand, MAX_PROFILE_COMMAND_BYTES } from "../src/orchestrator/profile.ts";
 
 const exec = promisify(execFile);
 const cleanup: string[] = [];
@@ -147,7 +148,7 @@ const agentInfo = (paneId: string, fields: Record<string, unknown> = {}) => tool
 const renamed = (paneId: string) => tool("agent", "rename", { type: "agent_info", agent: { agent: "pi", agent_status: "idle", pane_id: paneId, name: "reviewer" } });
 const notDetected = () => new HerdrToolError({ kind: "operation_failed", message: "agent target not found", herdrCode: "agent_not_found", remoteOutcome: "not_applicable" });
 const profiled = (root: string, args: string[] = []): TaskLaunchInput => ({ ...request(root), piProfile: "work", args });
-const SECRETS = ["Do the work.", "--api-key", "sk-native-secret", "PROFILE_ENV_SECRET", "command pi-profile", "pi-profile work"];
+const SECRETS = ["Do the work.", "--api-key", "sk-native-secret", "PROFILE_ENV_SECRET", "command pi-profile", "--cwd", " work "];
 
 function profiledQueue(root: string, ...afterRun: Array<ReturnType<typeof tool> | Error>) {
   return [workspaceList(["wE"]), paneList("wE", root), notDetected(), createdTab("wE"), paneRan(), ...afterRun];
@@ -166,7 +167,7 @@ it("launches a profiled worker through pi-profile, then detects, names, verifies
   ]);
   expect(calls[2]![1]).toEqual({ action: "inspect", target: "reviewer" });
   expect(calls[3]![1]).toEqual({ action: "create", workspaceId: "wE", cwd: worktree, label: "review", focus: false });
-  expect(calls[4]![1]).toEqual({ action: "run", paneId: "wE:p2", command: " command pi-profile work '--model' 'x y'" });
+  expect(calls[4]![1]).toEqual({ action: "run", paneId: "wE:p2", command: ` command pi-profile --cwd '${worktree}' work '--model' 'x y'` });
   for (const index of [5, 6, 7, 8]) expect(calls[index]![1]).toEqual({ action: "inspect", target: "wE:p2" });
   expect(calls[9]![1]).toEqual({ action: "rename", target: "wE:p2", name: "reviewer" });
   expect(calls[10]![1]).toEqual({ action: "inspect", target: "reviewer" });
@@ -177,10 +178,10 @@ it("launches a profiled worker through pi-profile, then detects, names, verifies
 });
 
 it("keeps hostile native arguments inside single shell words of the fixed command", async () => {
-  const { root } = await makeRepo(); const calls: Array<[string, Record<string, unknown>]> = [];
+  const { root, worktree } = await makeRepo(); const calls: Array<[string, Record<string, unknown>]> = [];
   const args = ["", "-x", "a b", "it's", "$(id)", "line\nbreak", "; rm -rf /"];
   await launchTask(profiled(root, args), deps(profiledQueue(root, agentInfo("wE:p2"), agentInfo("wE:p2"), renamed("wE:p2"), agentInfo("wE:p2", { name: "reviewer" }), agentResult("agent_prompted", "wE:p2")), calls));
-  expect(calls[4]![1].command).toBe(" command pi-profile work '' '-x' 'a b' 'it'\\''s' '$(id)' $'line\\012break' '; rm -rf /'");
+  expect(calls[4]![1].command).toBe(` command pi-profile --cwd '${worktree}' work '' '-x' 'a b' 'it'\\''s' '$(id)' $'line\\012break' '; rm -rf /'`);
 });
 
 it("leaves an unprofiled launch on the native agent start path without launcher state", async () => {
@@ -195,6 +196,7 @@ it("refuses a profile for a non-Pi worker before any git or Herdr call", async (
   const { root } = await makeRepo(); const calls: Array<[string, Record<string, unknown>]> = [];
   await expect(launchTask({ ...profiled(root), agentKind: "claude" }, deps([], calls))).rejects.toMatchObject({ code: "invalid_input", stage: "validate" });
   await expect(launchTask({ ...profiled(root), piProfile: "work; id" }, deps([], calls))).rejects.toMatchObject({ code: "invalid_input", stage: "validate" });
+  await expect(launchTask({ ...profiled(root), piProfile: "recover" }, deps([], calls))).rejects.toMatchObject({ code: "invalid_input", stage: "validate" });
   expect(calls).toEqual([]);
 });
 
@@ -278,6 +280,33 @@ it("refuses an oversized profiled command as invalid input before any git or Her
   expect(calls).toEqual([]);
 });
 
+it("bounds the command built from the canonical worktree path before any mutation", async () => {
+  const { root, worktree } = await makeRepo(false); const calls: Array<[string, Record<string, unknown>]> = [];
+  const alias = path.join(path.dirname(root), "l" + path.basename(root).slice(-6)); cleanup.push(alias);
+  await fs.symlink(root, alias);
+  const aliasWorktree = path.join(alias, ".worktrees", "review");
+  expect(aliasWorktree.length).toBeLessThan(worktree.length);
+  const room = MAX_PROFILE_COMMAND_BYTES - Buffer.byteLength(buildProfileCommand("work", aliasWorktree, [])) - 3;
+  const args = ["x".repeat(room)];
+  expect(() => buildProfileCommand("work", aliasWorktree, args)).not.toThrow();
+  expect(() => buildProfileCommand("work", worktree, args)).toThrow();
+  await expect(launchTask({ ...profiled(root, args), repoRoot: alias }, deps([workspaceList(["wE"]), paneList("wE", root), notDetected(), createdTab("wE"), paneRan()], calls))).rejects.toMatchObject({ confirmed: { promptSubmitted: false } });
+  await expect(fs.access(worktree)).rejects.toThrow();
+  expect(calls.some(([group, input]) => ["create", "run"].includes(String(input.action)) && group !== "agent")).toBe(false);
+});
+
+it("never starts a detection poll after the startup deadline has passed", async () => {
+  const { root } = await makeRepo(); const calls: Array<[string, Record<string, unknown>]> = [];
+  const dependencies = deps(profiledQueue(root, notDetected(), notDetected(), notDetected()), calls);
+  const realNow = Date.now; let offset = 0;
+  dependencies.sleep = async () => { offset += 31_000; };
+  Date.now = () => realNow() + offset;
+  try {
+    await expect(launchTask(profiled(root), dependencies)).rejects.toMatchObject({ stage: "profile-detect", ambiguous: true });
+  } finally { Date.now = realNow; }
+  expect(calls.slice(5)).toHaveLength(1);
+});
+
 it("records the launcher command as submitted once Herdr accepted it, even if the acknowledgement is malformed", async () => {
   const { root } = await makeRepo();
   const malformed = tool("pane", "list", { type: "ok" });
@@ -315,5 +344,18 @@ it("honors cancellation between detection polls without further Herdr calls", as
   const dependencies = deps(profiledQueue(root, notDetected(), notDetected()), calls);
   dependencies.sleep = async () => { controller.abort(); };
   await expect(launchTask(profiled(root), dependencies, controller.signal)).rejects.toMatchObject({ code: "cancelled", stage: "profile-detect", confirmed: { launcher: { commandSubmitted: true } } });
+  expect(calls).toHaveLength(6);
+});
+
+it("reports cancellation that lands during an in-flight detection read as cancelled", async () => {
+  const { root } = await makeRepo(); const calls: Array<[string, Record<string, unknown>]> = [];
+  const controller = new AbortController();
+  const dependencies = deps(profiledQueue(root), calls);
+  const queued = dependencies.herdr;
+  dependencies.herdr = async (group, input, context) => {
+    if (calls.length >= 5) { calls.push([group, input]); controller.abort(); throw new HerdrToolError({ kind: "cancelled", message: "aborted", remoteOutcome: "not_applicable" }); }
+    return queued(group, input, context);
+  };
+  await expect(launchTask(profiled(root), dependencies, controller.signal)).rejects.toMatchObject({ code: "cancelled", stage: "profile-detect", confirmed: { launcher: { commandSubmitted: true }, promptSubmitted: false } });
   expect(calls).toHaveLength(6);
 });

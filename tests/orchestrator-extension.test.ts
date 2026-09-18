@@ -115,6 +115,9 @@ it("rejects unsafe profile names and launcher-shaped fields before dependencies"
     expect(Value.Check(TaskSchema, { ...launchInput, piProfile }), JSON.stringify(piProfile)).toBe(false);
     expect(() => validateTaskInput({ ...launchInput, piProfile }), JSON.stringify(piProfile)).toThrow(/piProfile/);
   }
+  for (const piProfile of ["recover", "create", "list", "config", "help", "version", "nul", "work-", "a--b"]) {
+    expect(() => validateTaskInput({ ...launchInput, piProfile }), piProfile).toThrow(/piProfile/);
+  }
   for (const field of ["command", "executable", "shell", "launcher", "env", "piProfilePath"]) {
     expect(() => validateTaskInput({ ...launchInput, [field]: "pi-profile work" })).toThrow();
     expect(Value.Check(TaskSchema, { ...launchInput, [field]: "pi-profile work" })).toBe(false);
