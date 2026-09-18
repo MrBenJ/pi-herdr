@@ -72,6 +72,9 @@ function hasHandles(op: Operation, result: Record<string, unknown>): boolean {
     return record(value) && typeof value[id] === "string" && value[id].length > 0;
   });
 }
+// Herdr acknowledges these input-only mutations with exit 0 and no output.
+// They return no handle, so an empty reply loses nothing worth inventing.
+const SILENT_ACKNOWLEDGEMENTS = new Set(["pane/run", "pane/send-text", "pane/send-keys", "agent/send-keys", "agent/rename"]);
 function tooLong(text: string): boolean {
   if (Buffer.byteLength(text) > PRESENT_BYTES) return true;
   return (text ? text.split("\n").length - Number(text.endsWith("\n")) : 0) > PRESENT_LINES;
@@ -100,6 +103,10 @@ export async function normalize(op: Operation, run: RunResult): Promise<ToolResu
     const stdoutError = errorEnvelope(envelope);
     if (stdoutError) return herdrFailure(op, run, stdoutError);
     if (run.exitCode !== 0) return fail(op, run, run.exitCode === 2 ? "invalid_input" : "operation_failed", "Herdr CLI exited unsuccessfully; inspect private diagnostics.");
+    if (run.stdout.bytes === 0 && run.stderr.bytes === 0 && SILENT_ACKNOWLEDGEMENTS.has(`${op.group}/${op.action}`)) {
+      await cleanup(run);
+      return { content: [{ type: "text", text: `${op.group}/${op.action} acknowledged` }], details: { group: op.group, action: op.action, truncated: false } };
+    }
     if (!record(envelope) || typeof envelope.id !== "string" || "error" in envelope || !record(envelope.result) || !hasHandles(op, envelope.result)) {
       return fail(op, run, "malformed_output", "Herdr returned an invalid success envelope or missing creation handle.");
     }

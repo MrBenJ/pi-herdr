@@ -32,7 +32,9 @@ Do not use the interrupted `aria-actions` worktree as smoke-test material. A fut
 
 ## Profiled launch checks (`piProfile`)
 
-**Status: not run.** These need the same owner authorization as the orchestrator checks, plus approval of the exact profile used.
+**Status: partially run (2026-09-18, owner-driven, Herdr 0.9.0, Pi 0.85.1, pi-profile 0.1.0, macOS, zsh).** In a disposable repository with a disposable profile, three profiled launches were made. The first exposed a result-layer bug (Herdr's silent `pane run` acknowledgement was reported as a `profile-run` failure although the worker had started); after the fix, two launches succeeded end to end: one no-focus tab, foreground processes `pi-profile --cwd <worktree> <profile>` plus its `pi` child, the profile indicator shown, the requested name confirmed on the exact pane, and a three-line prompt delivered once and intact with the boundary, answered correctly by the worker. `agent_session`, `interactive_ready`, and `launch_pending` were absent for the profiled worker. Not yet run: steps 1, 6–8, the default-directory variant of step 3, and the remaining repetitions of step 5.
+
+These need the same owner authorization as the orchestrator checks, plus approval of the exact profile used.
 
 Additional authorization record: the disposable profile name (create one with `pi-profile create`, for example `smoke-a`; do not use a real work or client profile), confirmation that `pi-profile` and `pi` resolve on the `PATH` of a freshly opened Herdr tab, the tab shell (bash or zsh), and the native argument array. Never record the profile's `.env` contents.
 
