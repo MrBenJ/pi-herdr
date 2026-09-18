@@ -1,14 +1,17 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { HERDR_AGENT_KINDS } from "../contracts.ts";
 import { execute } from "../execute.ts";
 import { createRunner } from "../transport/runner.ts";
+import { WORKTREE_DIR } from "./contracts.ts";
 import type { OrchestratorDependencies, TaskInput, TaskLaunchInput } from "./contracts.ts";
 import { formatOrchestratorError, OrchestratorError } from "./errors.ts";
 import { guardToolCall } from "./guards.ts";
 import { inspectTask, launchTask } from "./launch.ts";
+import { buildProfileCommand, isPiProfileName, PI_PROFILE_PATTERN } from "./profile.ts";
 
 export const TaskSchema = Type.Object({
   action: StringEnum(["inspect", "launch"], { description: "Task operation to perform." }),
@@ -20,7 +23,8 @@ export const TaskSchema = Type.Object({
   agentName: Type.Optional(Type.String({ description: "Name for the one worker." })),
   agentKind: Type.Optional(StringEnum(HERDR_AGENT_KINDS, { description: "Supported worker kind." })),
   prompt: Type.Optional(Type.String({ description: "Task instructions placed inside a fixed boundary envelope." })),
-  args: Type.Optional(Type.Array(Type.String(), { description: "Literal native worker arguments." })),
+  args: Type.Optional(Type.Array(Type.String(), { description: "Literal native worker arguments. Never a profile selector." })),
+  piProfile: Type.Optional(Type.String({ pattern: PI_PROFILE_PATTERN, maxLength: 64, description: "Logical pi-profile name; valid only with agentKind pi. Starts the worker as `pi-profile <name> [...args]`. Not a path or command." })),
 }, { additionalProperties: false });
 
 function invalid(message: string): never {
@@ -42,7 +46,7 @@ export function validateTaskInput(value: unknown): TaskInput {
     return { action, repoRoot: validateString(input, "repoRoot") };
   }
   if (action !== "launch") invalid("action must be inspect or launch.");
-  const allowed = new Set(["action", "repoRoot", "worktreeName", "branch", "baseRef", "tabLabel", "agentName", "agentKind", "prompt", "args"]);
+  const allowed = new Set(["action", "repoRoot", "worktreeName", "branch", "baseRef", "tabLabel", "agentName", "agentKind", "prompt", "args", "piProfile"]);
   if (Object.keys(input).some(key => !allowed.has(key))) invalid("launch contains a caller-controlled topology field or unknown field.");
   const args = input.args;
   if (args !== undefined && (!Array.isArray(args) || args.some(argument => typeof argument !== "string" || argument.includes("\0")))) invalid("args must contain only strings without NUL characters.");
@@ -50,6 +54,12 @@ export function validateTaskInput(value: unknown): TaskInput {
   if (!(HERDR_AGENT_KINDS as readonly string[]).includes(agentKind)) invalid("agentKind is not supported.");
   const agentName = validateString(input, "agentName");
   if (!/^[a-z][a-z0-9_-]{0,31}$/.test(agentName)) invalid("agentName does not match the Herdr name pattern.");
+  const piProfile = input.piProfile;
+  if (piProfile !== undefined) {
+    if (!isPiProfileName(piProfile)) invalid(`piProfile must be a logical pi-profile name matching ${PI_PROFILE_PATTERN}, with hyphens only between alphanumerics and no pi-profile command or device name.`);
+    if (agentKind !== "pi") invalid("piProfile is valid only when agentKind is pi.");
+    try { buildProfileCommand(piProfile, path.resolve(validateString(input, "repoRoot"), WORKTREE_DIR, validateString(input, "worktreeName")), (args ?? []) as string[]); } catch (error) { if (error instanceof OrchestratorError) throw error; invalid("args are too large for a profiled launch."); }
+  }
   const prompt = validateString(input, "prompt", true);
   if (Buffer.byteLength(prompt, "utf8") > 256 * 1024) invalid("prompt exceeds the 256 KiB orchestration limit.");
   return {
@@ -63,6 +73,7 @@ export function validateTaskInput(value: unknown): TaskInput {
     agentKind: agentKind as TaskLaunchInput["agentKind"],
     prompt,
     ...(args ? { args: [...args] as string[] } : {}),
+    ...(piProfile !== undefined ? { piProfile } : {}),
   };
 }
 
@@ -101,11 +112,12 @@ export default function orchestrator(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "herdr_task",
     label: "Herdr task",
-    description: "Safely inspect or launch one repository-bound worker. The orchestrator derives the sole workspace and exact <repo>/.worktrees/<name> path; callers cannot supply topology IDs or a worktree path. Launch is serial, no-focus, one-worker, and never retries or cleans up ambiguous mutations.",
+    description: "Safely inspect or launch one repository-bound worker. The orchestrator derives the sole workspace and exact <repo>/.worktrees/<name> path; callers cannot supply topology IDs or a worktree path. Launch is serial, no-focus, one-worker, and never retries or cleans up ambiguous mutations. Optional piProfile (agentKind pi only) starts the worker through `pi-profile <name>`; args stay native Pi arguments.",
     promptSnippet: "Inspect or launch one safely bounded repository worker",
     promptGuidelines: [
       "Use herdr_task launch for worker topology instead of direct workspace, tab, pane, agent-start, or git-worktree mutations.",
       "Use herdr_task inspect before uncertain launches; duplicate repository workspaces fail closed.",
+      "To run a Pi worker under a pi-profile, set piProfile to the logical profile name; never put a profile name, path, or command in args.",
     ],
     parameters: TaskSchema,
     execute: async (_id, rawInput, signal, _update, ctx) => {

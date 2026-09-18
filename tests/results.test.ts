@@ -197,3 +197,27 @@ it("bounds all typed failures, including compiler errors and JSON-escaped contro
   expect(Buffer.byteLength(typed.message)).toBeLessThanOrEqual(51200);
   expect(JSON.parse(typed.message)).toEqual(typed.failure);
 });
+
+it.each([
+  { name: "pane run", op: () => compilePane({ action: "run", paneId: "w91:p63", command: "echo hi" }) },
+  { name: "pane send-text", op: () => compilePane({ action: "send-text", paneId: "w91:p63", text: "hi" }) },
+  { name: "pane send-keys", op: () => compilePane({ action: "send-keys", paneId: "w91:p63", keys: ["Enter"] }) },
+  { name: "agent send-keys", op: () => compileAgent({ action: "send-keys", target: "worker", keys: ["Enter"] }) },
+  { name: "agent rename", op: () => compileAgent({ action: "rename", target: "w91:p63", name: "worker" }) },
+])("accepts the silent exit-0 acknowledgement Herdr prints for $name", async ({ op }) => {
+  const operation = op(); const run = await capture("", "", 0);
+  const result = await normalize(operation, run);
+  expect(result.details).toMatchObject({ group: operation.group, action: operation.action, truncated: false });
+  expect(result.details).not.toHaveProperty("result");
+  expect(result.content[0]?.text).toContain("acknowledged");
+});
+
+it("still rejects a silent reply for operations that must return data or handles", async () => {
+  await failure(create(), await capture("", "", 0), "malformed_output", "unknown");
+  await failure(list(), await capture("", "", 0), "malformed_output", "not_applicable");
+  await failure(compileAgent({ action: "prompt", target: "worker", text: "hi" }), await capture("", "", 0), "malformed_output", "unknown");
+});
+
+it("does not treat a silent non-zero exit as an acknowledgement", async () => {
+  await failure(compilePane({ action: "run", paneId: "w91:p63", command: "echo hi" }), await capture("", "", 1), "operation_failed", "unknown");
+});

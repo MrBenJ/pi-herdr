@@ -64,7 +64,21 @@ The launch is serial: validate repository → inventory git and Herdr → exactl
 {"tool":"herdr_task","input":{"action":"launch","repoRoot":"/absolute/project","worktreeName":"issue-123","branch":"feat/issue-123","baseRef":"main","tabLabel":"issue-123","agentName":"issue-123","agentKind":"pi","prompt":"Implement the approved plan and report evidence.","args":[]}}
 ```
 
-While the orchestrator is loaded, its policy hook blocks direct Herdr topology creation/start calls and direct Bash `git worktree add|move|remove`. It also bounds Todo calls tagged `enqueue` to the current canonical repository and appends a repository execution footer. This is defense in depth, not a shell sandbox.
+#### Launching a Pi worker under a profile
+
+Add the optional `piProfile` field to start the worker through [`pi-profile`](https://www.npmjs.com/package/pi-profile) instead of plain `pi`:
+
+```json
+{"tool":"herdr_task","input":{"action":"launch","repoRoot":"/absolute/project","worktreeName":"issue-123","branch":"feat/issue-123","baseRef":"main","tabLabel":"issue-123","agentName":"issue-123","agentKind":"pi","piProfile":"client-a","prompt":"Implement the approved plan and report evidence.","args":["--model","provider/model"]}}
+```
+
+- `piProfile` is a logical name matching `^[a-z0-9][a-z0-9-]{0,63}$` (hyphens only between alphanumerics; `pi-profile` command names such as `list` or `recover` are refused), accepted only with `agentKind: "pi"`. Paths, commands, whitespace, shell syntax, and environment assignments are rejected before anything is created. There is no custom-executable or shell-command field.
+- `args` remain native Pi arguments in both modes and are passed through literally after the profile; they cannot select a profile.
+- Without `piProfile`, the launch is unchanged: `herdr agent start --kind pi`. With it, the orchestrator checks the name is free, creates the same no-focus tab, types one fixed, fully quoted `pi-profile --cwd <worktree> <name> [...args]` command into it (so a profile's default directory cannot move the worker out of the worktree), waits until Herdr detects an idle `pi` agent in that exact pane, names it, verifies the name, and only then submits the bounded prompt. `pi-profile` therefore owns profile `.env` loading, environment filtering, settings/packages, extension injection, and session leases exactly as in a manual launch.
+- `pi-profile` and `pi` must be on the `PATH` of the shell Herdr opens in a new tab, and that shell must be bash- or zsh-compatible.
+- A failed profiled launch reports the confirmed worktree/workspace/tab plus `launcher.commandSubmitted`, is never retried or cleaned up, and never includes the prompt, arguments, command text, or profile environment. See [docs/tool-contract.md](docs/tool-contract.md#profiled-pi-launch-piprofile) for stages and reconciliation.
+
+While the orchestrator is loaded, its policy hook blocks direct Herdr topology creation/start calls and direct Bash `git worktree add|move|remove`. It also bounds Todo calls tagged `enqueue` to the current canonical repository and appends a repository execution footer. `herdr_pane run`/`send-text` into an existing pane are not classified. This is defense in depth, not a shell sandbox.
 
 To load only one layer, use Pi's package object filters in settings (paths are relative to this package):
 

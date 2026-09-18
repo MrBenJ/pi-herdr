@@ -3,6 +3,9 @@ import type { HerdrAgentKind, ToolResult } from "../contracts.ts";
 export const ORCHESTRATOR_DEADLINE_MS = 30_000;
 export const WORKTREE_DIR = ".worktrees";
 export const BOUNDARY_VERSION = 1;
+export const PROFILE_STARTUP_DEADLINE_MS = 30_000;
+export const PROFILE_POLL_INTERVAL_MS = 500;
+export const PROFILE_READY_POLLS = 2;
 
 export interface TaskInspectInput {
   action: "inspect";
@@ -20,6 +23,7 @@ export interface TaskLaunchInput {
   agentKind: HerdrAgentKind;
   prompt: string;
   args?: string[];
+  piProfile?: string;
 }
 
 export type TaskInput = TaskInspectInput | TaskLaunchInput;
@@ -48,6 +52,7 @@ export interface LaunchResources {
   worktree?: WorktreeState;
   workspace?: { workspaceId: string; disposition: "existing" | "created" };
   tab?: { tabId: string; paneId: string };
+  launcher?: { kind: "pi-profile"; profile: string; commandSubmitted: boolean };
   agent?: { name: string; paneId: string };
   promptSubmitted: boolean;
 }
@@ -100,4 +105,5 @@ export interface OrchestratorDependencies {
   herdr: HerdrExecutor;
   paths: PathOps;
   env: NodeJS.ProcessEnv;
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }

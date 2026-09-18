@@ -96,3 +96,52 @@ it("separate instances dispose only their own runner and never remote resources"
   expect(second.dispose).not.toHaveBeenCalled();
   expect(first.run).not.toHaveBeenCalled();
 });
+
+const profiledInput = { ...launchInput, piProfile: "dj-league" };
+
+it("accepts an optional logical Pi profile only for Pi workers", () => {
+  expect(Value.Check(TaskSchema, profiledInput)).toBe(true);
+  expect(validateTaskInput(profiledInput)).toMatchObject({ agentKind: "pi", piProfile: "dj-league" });
+  expect(validateTaskInput(launchInput)).not.toHaveProperty("piProfile");
+  for (const agentKind of HERDR_AGENT_KINDS.filter(kind => kind !== "pi")) {
+    expect(() => validateTaskInput({ ...profiledInput, agentKind })).toThrow(/piProfile/);
+  }
+  expect(() => validateTaskInput({ action: "inspect", repoRoot: "/repo", piProfile: "work" })).toThrow();
+});
+
+it("rejects unsafe profile names and launcher-shaped fields before dependencies", async () => {
+  const unsafe = ["", " ", "two words", "work ", "Work", "-work", "../work", "./work", "/usr/bin/env", "a/b", "a\\b", "~", "work;id", "work&&id", "work|id", "$(id)", "`id`", "$HOME", "FOO=bar", "FOO=bar pi", "work\nid", "work\0", "a".repeat(65), 7, null, ["work"], { name: "work" }];
+  for (const piProfile of unsafe) {
+    expect(Value.Check(TaskSchema, { ...launchInput, piProfile }), JSON.stringify(piProfile)).toBe(false);
+    expect(() => validateTaskInput({ ...launchInput, piProfile }), JSON.stringify(piProfile)).toThrow(/piProfile/);
+  }
+  for (const piProfile of ["recover", "create", "list", "config", "help", "version", "nul", "work-", "a--b"]) {
+    expect(() => validateTaskInput({ ...launchInput, piProfile }), piProfile).toThrow(/piProfile/);
+  }
+  for (const field of ["command", "executable", "shell", "launcher", "env", "piProfilePath"]) {
+    expect(() => validateTaskInput({ ...launchInput, [field]: "pi-profile work" })).toThrow();
+    expect(Value.Check(TaskSchema, { ...launchInput, [field]: "pi-profile work" })).toBe(false);
+  }
+  const harness = registrationHarness({ allowedEvents: ["tool_call", "session_shutdown"] });
+  orchestrator(harness.api);
+  await expect(harness.tools.get("herdr_task")!.execute("bad", { ...launchInput, piProfile: "work; id" }, undefined, undefined, { cwd: "/repo" } as ExtensionContext)).rejects.toThrow(/invalid_input/);
+  expect(launchTask).not.toHaveBeenCalled();
+});
+
+it("rejects a profiled launch whose launcher command would exceed the bounded size", () => {
+  expect(() => validateTaskInput({ ...profiledInput, args: ["x".repeat(64 * 1024)] })).toThrow(/args/);
+  expect(validateTaskInput({ ...launchInput, args: ["x".repeat(64 * 1024)] })).toMatchObject({ action: "launch" });
+});
+
+it("does not echo a rejected profile value in the public error", () => {
+  try { validateTaskInput({ ...launchInput, piProfile: "SECRET=hunter2 pi" }); expect.unreachable(); }
+  catch (error) { expect((error as Error).message).not.toContain("hunter2"); }
+});
+
+it("documents the profile field in the tool description and guidelines", () => {
+  const harness = registrationHarness({ allowedEvents: ["tool_call", "session_shutdown"] });
+  orchestrator(harness.api);
+  const tool = harness.tools.get("herdr_task")!;
+  expect(tool.description).toContain("piProfile");
+  expect(tool.promptGuidelines?.join("\n")).toMatch(/piProfile.*args|args.*piProfile/s);
+});
