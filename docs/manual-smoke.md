@@ -30,6 +30,20 @@ Do not use the interrupted `aria-actions` worktree as smoke-test material. A fut
 5. **Failure preservation.** Do not manufacture a live ambiguous mutation. Use automated evidence for this behavior. If a real ambiguity occurs, stop, record confirmed handles, and obtain separate cleanup authorization; never retry automatically.
 6. **No automatic cleanup.** Leave all successful/partial resources in place until the owner explicitly authorizes exact branch/worktree/tab/agent cleanup.
 
+## Profiled launch checks (`piProfile`)
+
+**Status: not run.** These need the same owner authorization as the orchestrator checks, plus approval of the exact profile used.
+
+Additional authorization record: the disposable profile name (create one with `pi-profile create`, for example `smoke-a`; do not use a real work or client profile), confirmation that `pi-profile` and `pi` resolve on the `PATH` of a freshly opened Herdr tab, the tab shell (bash or zsh), and the native argument array. Never record the profile's `.env` contents.
+
+1. **Pre-mutation rejection.** Call `herdr_task launch` with `piProfile: "../x"`, then with a valid `piProfile` and `agentKind: "claude"`. Both must fail as `invalid_input`; `herdr_task inspect` must show no new worktree, tab, or agent.
+2. **Single profiled launch.** In the approved disposable repository, launch once with `agentKind: "pi"`, the disposable `piProfile`, and harmless `args` that include a value with a space. Verify one no-focus tab, unchanged original focus, and a result containing `launcher: {kind: "pi-profile", profile, commandSubmitted: true}` and the requested agent name on the returned pane.
+3. **Real launcher.** With `herdr pane process-info --pane <returned pane>`, confirm the foreground processes are `pi-profile <profile> …` and its `pi` child with the native arguments intact. In the worker, confirm the profile indicator/`PI_PROFILE_NAME` and that `pi-profile show <profile>` lists an active lease. Do not publish environment values.
+4. **Detection and naming.** `herdr_agent inspect` by the requested name must return that exact pane with agent `pi`. Confirm the boundary prompt arrived once, intact, and only after the worker was idle.
+5. **Unprofiled regression.** Launch once without `piProfile` and confirm the worker is plain `pi` started by `agent start`, with no `launcher` in the result.
+6. **Failure observation (optional, separately approved).** Launch with a well-formed but nonexistent profile name. Expect stage `profile-detect`, `ambiguous: true`, the tab handle, `commandSubmitted: true`, no `agent`, and the `pi-profile` error visible only in the pane. Confirm nothing was retried or closed. Clean up the tab only with explicit authorization.
+7. **Blocked startup.** If the worker stops at a trust or approval dialog, the launch must fail at `profile-detect` without answering it. Do not answer it on the owner's behalf.
+
 ## Primitive checklist
 
 1. **Independent load.** Filter the package to `+src/index.ts`, reload pi without requiring Todos, and confirm exactly `herdr_workspace`, `herdr_tab`, `herdr_pane`, and `herdr_agent` are discoverable. Registration alone must not create layout or contact/start a server.

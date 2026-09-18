@@ -95,7 +95,7 @@ Use actual returned creation handles; do not derive IDs from a requested name or
 | Action | Required | Optional | Mutation? |
 |---|---|---|---|
 | inspect | repoRoot | — | no |
-| launch | repoRoot, worktreeName, branch, baseRef, tabLabel, agentName, agentKind, prompt | args | yes |
+| launch | repoRoot, worktreeName, branch, baseRef, tabLabel, agentName, agentKind, prompt | args, piProfile | yes |
 
 `repoRoot` must be the absolute, real path of a canonical main checkout. Linked-worktree and nested-directory roots are rejected. `/.worktrees/` must already be ignored. `worktreeName` is a 1–80 character filename slug beginning with an alphanumeric; separators, dot segments, `.claude`, controls, whitespace, and leading dashes are rejected. The only derived path is `<repoRoot>/.worktrees/<worktreeName>`. Callers cannot submit `worktreePath`, `workspaceId`, `tabId`, `paneId`, or focus settings.
 
@@ -114,7 +114,35 @@ An exact path/branch pair is reusable. A path-only, branch-only, filesystem, sym
 
 The final worker boundary names the canonical root, exact worktree, workspace, tab, pane, and agent; it forbids worktree/layout/agent creation, subagents, background work, and Todo-boundary rewrites. Caller prompt prose is untrusted and cannot replace the final boundary.
 
-While this entry point is loaded, a `tool_call` hook blocks direct `herdr_workspace create`, `herdr_tab create`, `herdr_pane split`, `herdr_agent start`, and recognizable Bash `git worktree add|move|remove` commands. Read/inspect/prompt/wait and explicitly confirmed close operations retain primitive behavior. The Bash classification is defense in depth, not a shell sandbox.
+### Profiled Pi launch (`piProfile`)
+
+`piProfile` is an optional logical [`pi-profile`](https://www.npmjs.com/package/pi-profile) name such as `work` or `client-a`. It must match `^[a-z0-9][a-z0-9-]{0,63}$` and is valid only with `agentKind: "pi"`; every other kind is rejected. It is never a path, executable, or command: whitespace, separators, dot segments, shell syntax, environment assignments, uppercase, and anything else outside the pattern fail as `invalid_input` before any git or Herdr call, and the rejected value is not echoed. There is no general executable, shell-command, or environment field.
+
+`args` are always native Pi arguments. They are never a profile selector; passing a profile name in `args` only hands Pi an unknown positional argument.
+
+| | Ordinary launch | Profiled launch |
+|---|---|---|
+| Worker process | `pi [...args]` | `pi-profile <piProfile> [...args]` |
+| Started by | `herdr agent start --kind pi` | one fixed command typed into the new tab's shell |
+| Configuration root | the environment's default Pi root | the profile root, with the launcher's `.env` loading, provider-variable filtering, extension injection, and session lease |
+| Naming | assigned by `agent start` | assigned by `agent rename` after detection |
+
+Herdr's `agent start` only runs a kind's canonical executable, so steps 6–7 of a profiled launch are replaced by:
+
+1. **Name check (read).** After inventory and before the worktree is created, `agent inspect <agentName>` must report `agent_not_found`. A name already in use fails at stage `agent-name-check` with no worktree, workspace, or tab created.
+2. **Tab.** The same one no-focus tab at the worktree.
+3. **Launcher command (one mutation, stage `profile-run`).** `pane run` submits exactly ` command pi-profile <piProfile> [...quoted args]` to the tab's root pane. The executable name is fixed and resolved by that shell's `PATH`; `command` bypasses shell functions. Each argument becomes one POSIX single-quoted word (`'` written as `'\''`), so spaces, quotes, `$`, backticks, globs, operators, empty strings, and leading dashes stay literal. An argument containing a control character (newline, tab, escape, DEL, C1) is written as `$'...'` with every control byte octal-escaped, so no raw control byte ever reaches the interactive line editor. NUL is rejected. The whole command is bounded to 16 KiB; larger `args` fail as `invalid_input` before mutation. The leading space keeps the line out of shell history only where the shell is configured for that.
+4. **Detection (reads, stage `profile-detect`).** `agent inspect <paneId>` is polled every 500 ms; no new poll starts after 30 s, so with one outstanding read (itself bounded to 30 s) the stage ends within about 60 s. The worker is ready only when Herdr reports agent `pi` in that exact pane as `idle` on two consecutive polls. `agent_not_found` means "not yet"; any other read failure, a different agent kind, a different pane, a `blocked` worker, cancellation, or the deadline stops the launch. A blocked worker is surfaced, never answered.
+5. **Naming (one mutation, stage `agent-name`).** `agent rename <paneId> <agentName>`, then `agent inspect <agentName>` must confirm the name on the exact pane with agent `pi`.
+6. **Prompt.** The bounded prompt is submitted by name only after step 5 is confirmed.
+
+Polling repeats reads only. `pane run`, `agent rename`, and `agent prompt` are each attempted at most once. `resources.launcher` reports `{kind: "pi-profile", profile, commandSubmitted}` in both results and errors; `resources.agent` appears only after the name is confirmed.
+
+Reconciling a profiled failure: nothing is closed, killed, renamed back, or retried. At `profile-run` with `commandSubmitted: false` the command may or may not have been typed; `commandSubmitted: true` means Herdr accepted it. At `profile-detect` or `agent-name` a `pi-profile`/Pi process may be starting, running unnamed, blocked at a dialog, or may have exited (unknown profile, missing `pi-profile` on the pane's `PATH`, unsafe profile `.env`, lease failure) — read `confirmed.tab.paneId` with the primitive tools and decide with the owner. Public errors carry stages and handles only: never the prompt, native arguments, command text, terminal contents, or any profile-owned environment value. The pane itself necessarily displays the typed command, as any terminal would.
+
+The tab's shell must be a bash- or zsh-compatible interactive shell at its prompt. Printable arguments are also literal under any POSIX `sh`; `$'...'` control-character arguments need bash, zsh, or ksh. Other shells (for example fish, which treats `\\` inside single quotes differently) can receive altered argument text, though never an altered command.
+
+While this entry point is loaded, a `tool_call` hook blocks direct `herdr_workspace create`, `herdr_tab create`, `herdr_pane split`, `herdr_agent start`, and recognizable Bash `git worktree add|move|remove` commands. Read/inspect/prompt/wait and explicitly confirmed close operations retain primitive behavior. `herdr_pane run` and `send-text` are not classified, so a caller holding the primitive tools can still type an agent command into an existing pane; the hook is not a substitute for withholding those tools from workers. The Bash classification is defense in depth, not a shell sandbox.
 
 For `todo add`/`todo update` calls explicitly tagged `enqueue`, the hook requires a prompt, rejects absolute filesystem paths outside the current canonical repository, and appends an idempotent repository boundary. Todo remains tracking-only and no foreign Todo store is opened or mutated.
 
