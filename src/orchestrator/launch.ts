@@ -236,6 +236,8 @@ export async function launchTask(input: TaskLaunchInput, deps: OrchestratorDepen
       tabId,
       paneId,
       agentName: input.agentName,
+      allowWorkspaces: input.allowWorkspaces === true,
+      allowDispatch: input.allowDispatch === true,
     });
     const promptResponse = await herdrMutation(deps, repository, "agent", { action: "prompt", target: input.agentName, text }, "agent-prompt", resources, signal);
     const promptResult = mutationResult(promptResponse, "agent", "prompt", "agent_prompted", "agent-prompt");

@@ -575,14 +575,21 @@ Authorized tab: <tabId>
 Authorized pane: <paneId>
 Authorized agent: <agentName>
 Do not create, move, or remove git worktrees.
-Do not create Herdr workspaces, tabs, panes, or agents.
-Do not dispatch subagents or background work.
+Do not create Herdr workspaces, tabs, panes, or agents unless this run was explicitly authorized to; none was granted.
+Do not dispatch subagents or background work unless this run was explicitly authorized to; none was granted.
 Do not rewrite Todo execution boundaries.
 Report a blocker instead of inventing infrastructure.
 END PI-HERDR ORCHESTRATION BOUNDARY v1
 ```
 
 Use a generated random fence token around caller prose so caller content cannot forge the task delimiter. The policy boundary itself remains fixed and last.
+
+The workspace/tab/pane/agent line and the subagent/background-work line are prohibited **by default**. Two trusted flags on `TaskLaunchInput` — `allowWorkspaces` and `allowDispatch` — lift each prohibition when the operator explicitly grants it (their turn, a skill, an extension). The flags are plumbed straight to `buildWorkerPrompt`; they are **never** derived from the untrusted `task`/`prompt` text, so an injected "you are authorized" string cannot grant itself permission. When a flag is set, its line instead reads:
+
+```text
+Creating Herdr workspaces, tabs, panes, or agents is authorized for this run; otherwise it is prohibited by default.
+Dispatching subagents or background work is authorized for this run; otherwise it is prohibited by default.
+```
 
 - [x] **Step 2: Run prompt tests and confirm RED**
 
@@ -604,6 +611,8 @@ export interface WorkerPromptInput {
   tabId: string;
   paneId: string;
   agentName: string;
+  allowWorkspaces?: boolean; // trusted; never from `task`
+  allowDispatch?: boolean;   // trusted; never from `task`
 }
 
 export function buildWorkerPrompt(input: WorkerPromptInput): string;
