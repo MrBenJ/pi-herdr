@@ -880,10 +880,12 @@ Resolve the current canonical repo using read-only git. If canonicalization fail
 BEGIN REPOSITORY EXECUTION BOUNDARY v1
 Canonical repository: <repoRoot>
 Worktrees: <repoRoot>/.worktrees/<name> only
-This Todo prompt does not authorize creating Herdr workspaces, worktrees, tabs, panes, agents, subagents, or background jobs.
+This Todo prompt does not authorize creating worktrees, Herdr workspaces, tabs, panes, agents, subagents, or background jobs.
 Use herdr_task launch for execution topology.
 END REPOSITORY EXECUTION BOUNDARY v1
 ```
+
+The "does not authorize creating …" list is now conditional on the operator env grants: git worktrees are always listed, the Herdr workspaces/tabs/panes/agents group is dropped when `HERDR_ALLOW_WORKSPACES=1`, and the subagents/background-jobs group is dropped when `HERDR_ALLOW_DISPATCH=1` — mirroring the same grants the worker prompt and the topology-tool guard honor.
 
 - [x] **Step 10: Prove factory isolation and disposal**
 

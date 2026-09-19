@@ -22,7 +22,7 @@ async function repo() {
   return { root, linked };
 }
 afterEach(async () => { for (const root of cleanup.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
-const dependencies = (): OrchestratorDependencies => ({ git, paths: { realpath: fs.realpath, lstat: fs.lstat, access: fs.access }, env: {}, herdr: async () => { throw new Error("unused"); } });
+const dependencies = (env: NodeJS.ProcessEnv = {}): OrchestratorDependencies => ({ git, paths: { realpath: fs.realpath, lstat: fs.lstat, access: fs.access }, env, herdr: async () => { throw new Error("unused"); } });
 const event = (toolName: string, input: Record<string, unknown>) => ({ type: "tool_call", toolCallId: "x", toolName, input }) as ToolCallEvent & { input: Record<string, unknown> };
 
 it.each([
@@ -32,6 +32,34 @@ it.each([
   ["herdr_agent", { action: "start", name: "x", kind: "pi", paneId: "wE:p1" }],
 ])("blocks direct topology mutation through %s", async (toolName, input) => {
   await expect(guardToolCall(event(toolName as string, input), { cwd: "/repo" }, dependencies())).resolves.toMatchObject({ block: true, reason: expect.stringContaining("herdr_task") });
+});
+
+it.each([
+  ["herdr_workspace", { action: "create", cwd: "/repo" }],
+  ["herdr_tab", { action: "create", workspaceId: "wE", cwd: "/repo" }],
+  ["herdr_pane", { action: "split", paneId: "wE:p1", cwd: "/repo", direction: "right" }],
+  ["herdr_agent", { action: "start", name: "x", kind: "pi", paneId: "wE:p1" }],
+])("permits topology mutation %s when the operator grants HERDR_ALLOW_WORKSPACES", async (toolName, input) => {
+  await expect(guardToolCall(event(toolName as string, input), { cwd: "/repo" }, dependencies({ HERDR_ALLOW_WORKSPACES: "1" }))).resolves.toBeUndefined();
+});
+
+it("keeps the git worktree ban absolute even with topology and dispatch grants", async () => {
+  const granted = dependencies({ HERDR_ALLOW_WORKSPACES: "1", HERDR_ALLOW_DISPATCH: "1" });
+  await expect(guardToolCall(event("bash", { command: "git worktree add .worktrees/x -b x" }), { cwd: "/repo" }, granted)).resolves.toMatchObject({ block: true });
+});
+
+it("reflects the operator grants in the enqueued Todo boundary text", async () => {
+  const { root, linked } = await repo();
+  const denied = event("todo", { action: "add", taskname: "x", tags: ["enqueue"], prompt: `Work in ${root}` });
+  await expect(guardToolCall(denied, { cwd: linked }, dependencies())).resolves.toBeUndefined();
+  expect(String(denied.input.prompt)).toContain("does not authorize creating worktrees, Herdr workspaces, tabs, panes, agents, subagents, or background jobs");
+
+  const granted = event("todo", { action: "add", taskname: "y", tags: ["enqueue"], prompt: `Work in ${root}` });
+  await expect(guardToolCall(granted, { cwd: linked }, dependencies({ HERDR_ALLOW_WORKSPACES: "1", HERDR_ALLOW_DISPATCH: "1" }))).resolves.toBeUndefined();
+  const text = String(granted.input.prompt);
+  expect(text).toContain("does not authorize creating worktrees.");
+  expect(text).not.toContain("Herdr workspaces");
+  expect(text).not.toContain("subagents");
 });
 
 it.each([
