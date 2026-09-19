@@ -40,12 +40,12 @@ it("prohibits workspaces and dispatch by default when no permission is granted",
 
 it("emits authorization lines only for the trusted flags that are set", () => {
   const bothGranted = buildWorkerPrompt({ ...input, allowWorkspaces: true, allowDispatch: true });
-  expect(bothGranted).toContain("Creating Herdr workspaces, tabs, panes, or agents is authorized for this run; otherwise it is prohibited by default.");
+  expect(bothGranted).toContain("Creating execution topology (Herdr workspaces, tabs, panes, or agents) is authorized for this run via herdr_task launch; the direct herdr_* topology tools stay disabled.");
   expect(bothGranted).toContain("Dispatching subagents or background work is authorized for this run; otherwise it is prohibited by default.");
   expect(bothGranted).not.toContain("none was granted.");
 
   const onlyWorkspaces = buildWorkerPrompt({ ...input, allowWorkspaces: true });
-  expect(onlyWorkspaces).toContain("Creating Herdr workspaces, tabs, panes, or agents is authorized for this run");
+  expect(onlyWorkspaces).toContain("Creating execution topology (Herdr workspaces, tabs, panes, or agents) is authorized for this run via herdr_task launch");
   expect(onlyWorkspaces).toContain("Do not dispatch subagents or background work unless this run was explicitly authorized to; none was granted.");
 });
 

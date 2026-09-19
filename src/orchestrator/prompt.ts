@@ -56,7 +56,7 @@ export function buildWorkerPrompt(input: WorkerPromptInput): string {
     `Authorized agent: ${agentName}`,
     "Do not create, move, or remove git worktrees.",
     input.allowWorkspaces === true
-      ? "Creating Herdr workspaces, tabs, panes, or agents is authorized for this run; otherwise it is prohibited by default."
+      ? "Creating execution topology (Herdr workspaces, tabs, panes, or agents) is authorized for this run via herdr_task launch; the direct herdr_* topology tools stay disabled."
       : "Do not create Herdr workspaces, tabs, panes, or agents unless this run was explicitly authorized to; none was granted.",
     input.allowDispatch === true
       ? "Dispatching subagents or background work is authorized for this run; otherwise it is prohibited by default."

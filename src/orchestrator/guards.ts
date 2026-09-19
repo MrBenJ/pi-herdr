@@ -119,25 +119,16 @@ function inside(root: string, candidate: string): boolean {
   return candidate === root || candidate.startsWith(root + path.sep);
 }
 
-function humanList(items: string[]): string {
-  if (items.length <= 1) return items[0] ?? "";
-  if (items.length === 2) return `${items[0]} or ${items[1]}`;
-  return `${items.slice(0, -1).join(", ")}, or ${items[items.length - 1]}`;
-}
-
-function boundary(root: string, env: NodeJS.ProcessEnv): string {
-  // Mirror the worker-prompt grants: git worktree creation is always denied,
-  // Herdr topology only when HERDR_ALLOW_WORKSPACES is unset, and subagents/
-  // background work only when HERDR_ALLOW_DISPATCH is unset. Keeps this Todo
-  // boundary consistent with buildWorkerPrompt and the tool guard above.
-  const denied = ["worktrees"];
-  if (env.HERDR_ALLOW_WORKSPACES !== "1") denied.push("Herdr workspaces", "tabs", "panes", "agents");
-  if (env.HERDR_ALLOW_DISPATCH !== "1") denied.push("subagents", "background jobs");
+function boundary(root: string): string {
+  // Absolute and env-independent, matching the topology guard above: an enqueued
+  // Todo prompt never itself authorizes infrastructure. A worker granted
+  // allowWorkspaces/allowDispatch creates topology through herdr_task launch,
+  // not by treating this Todo boundary as permission.
   return [
     `BEGIN REPOSITORY EXECUTION BOUNDARY v${BOUNDARY_VERSION}`,
     `Canonical repository: ${root}`,
     `Worktrees: ${root}/${WORKTREE_DIR}/<name> only`,
-    `This Todo prompt does not authorize creating ${humanList(denied)}.`,
+    "This Todo prompt does not authorize creating Herdr workspaces, worktrees, tabs, panes, agents, subagents, or background jobs.",
     "Use herdr_task launch for execution topology.",
     `END REPOSITORY EXECUTION BOUNDARY v${BOUNDARY_VERSION}`,
   ].join("\n");
@@ -158,7 +149,7 @@ async function guardTodo(event: ToolCallEvent, cwd: string, deps: OrchestratorDe
       return blocked(`Enqueued Todo prompt path is outside the canonical repository ${root}.`);
     }
   }
-  const footer = boundary(root, deps.env);
+  const footer = boundary(root);
   if (!input.prompt.trimEnd().endsWith(footer)) input.prompt = `${input.prompt.trimEnd()}\n\n${footer}`;
   return undefined;
 }
@@ -167,10 +158,11 @@ export async function guardToolCall(event: ToolCallEvent, context: { cwd: string
   const mutation = TOPOLOGY_MUTATIONS.get(event.toolName);
   const input = event.input as Record<string, unknown>;
   if (mutation && input.action === mutation) {
-    // The operator env grant that authorizes allowWorkspaces in the worker prompt
-    // also relaxes this guard, so the prompt and the tool layer never disagree.
-    // Absent the grant, direct topology stays disabled and must go through herdr_task.
-    if (deps.env.HERDR_ALLOW_WORKSPACES === "1") return undefined;
+    // Absolute and env-independent: the orchestrator session must always route
+    // topology through herdr_task launch, never the direct primitive tools. A
+    // worker granted allowWorkspaces nests through herdr_task launch (which this
+    // guard permits), so no env-based relaxation is needed or safe here — that
+    // would turn an operator env var into a process-wide guard bypass.
     return blocked(`Direct topology mutation is disabled while the orchestrator is enabled. Use herdr_task launch instead of ${event.toolName} ${mutation}.`);
   }
   if (event.toolName === "bash" && typeof event.input.command === "string" && containsWorktreeMutation(event.input.command)) {

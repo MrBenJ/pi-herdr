@@ -587,7 +587,7 @@ Use a generated random fence token around caller prose so caller content cannot 
 The workspace/tab/pane/agent line and the subagent/background-work line are prohibited **by default**. Two flags on `TaskLaunchInput` — `allowWorkspaces` and `allowDispatch` — lift each prohibition, but only under a two-factor rule: the launch payload requests the grant *and* the operator authorizes it via an environment variable (`HERDR_ALLOW_WORKSPACES=1` / `HERDR_ALLOW_DISPATCH=1`), enforced in `validateTaskInput`. The payload request alone is rejected as `invalid_input`, because the `herdr_task` caller is untrusted (in an agentic flow untrusted task text can steer it into requesting a grant); only the operator environment, which that text cannot set, authorizes it. The grants are then plumbed straight to `buildWorkerPrompt`, never derived from the untrusted `task`/`prompt` text. When a grant is honored, its line instead reads:
 
 ```text
-Creating Herdr workspaces, tabs, panes, or agents is authorized for this run; otherwise it is prohibited by default.
+Creating execution topology (Herdr workspaces, tabs, panes, or agents) is authorized for this run via herdr_task launch; the direct herdr_* topology tools stay disabled.
 Dispatching subagents or background work is authorized for this run; otherwise it is prohibited by default.
 ```
 
@@ -880,12 +880,12 @@ Resolve the current canonical repo using read-only git. If canonicalization fail
 BEGIN REPOSITORY EXECUTION BOUNDARY v1
 Canonical repository: <repoRoot>
 Worktrees: <repoRoot>/.worktrees/<name> only
-This Todo prompt does not authorize creating worktrees, Herdr workspaces, tabs, panes, agents, subagents, or background jobs.
+This Todo prompt does not authorize creating Herdr workspaces, worktrees, tabs, panes, agents, subagents, or background jobs.
 Use herdr_task launch for execution topology.
 END REPOSITORY EXECUTION BOUNDARY v1
 ```
 
-The "does not authorize creating …" list is now conditional on the operator env grants: git worktrees are always listed, the Herdr workspaces/tabs/panes/agents group is dropped when `HERDR_ALLOW_WORKSPACES=1`, and the subagents/background-jobs group is dropped when `HERDR_ALLOW_DISPATCH=1` — mirroring the same grants the worker prompt and the topology-tool guard honor.
+This footer and the topology `tool_call` guard are absolute and env-independent: the `allowWorkspaces`/`allowDispatch` grants change only the worker prompt (what the worker is told it may do), not the guard. A granted worker creates topology through `herdr_task launch`, which the guard permits; the env grant is never a process-wide guard bypass.
 
 - [x] **Step 10: Prove factory isolation and disposal**
 

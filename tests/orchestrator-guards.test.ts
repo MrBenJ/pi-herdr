@@ -39,27 +39,9 @@ it.each([
   ["herdr_tab", { action: "create", workspaceId: "wE", cwd: "/repo" }],
   ["herdr_pane", { action: "split", paneId: "wE:p1", cwd: "/repo", direction: "right" }],
   ["herdr_agent", { action: "start", name: "x", kind: "pi", paneId: "wE:p1" }],
-])("permits topology mutation %s when the operator grants HERDR_ALLOW_WORKSPACES", async (toolName, input) => {
-  await expect(guardToolCall(event(toolName as string, input), { cwd: "/repo" }, dependencies({ HERDR_ALLOW_WORKSPACES: "1" }))).resolves.toBeUndefined();
-});
-
-it("keeps the git worktree ban absolute even with topology and dispatch grants", async () => {
+])("keeps topology mutation %s blocked even when HERDR_ALLOW_* env grants are present (no process-wide bypass)", async (toolName, input) => {
   const granted = dependencies({ HERDR_ALLOW_WORKSPACES: "1", HERDR_ALLOW_DISPATCH: "1" });
-  await expect(guardToolCall(event("bash", { command: "git worktree add .worktrees/x -b x" }), { cwd: "/repo" }, granted)).resolves.toMatchObject({ block: true });
-});
-
-it("reflects the operator grants in the enqueued Todo boundary text", async () => {
-  const { root, linked } = await repo();
-  const denied = event("todo", { action: "add", taskname: "x", tags: ["enqueue"], prompt: `Work in ${root}` });
-  await expect(guardToolCall(denied, { cwd: linked }, dependencies())).resolves.toBeUndefined();
-  expect(String(denied.input.prompt)).toContain("does not authorize creating worktrees, Herdr workspaces, tabs, panes, agents, subagents, or background jobs");
-
-  const granted = event("todo", { action: "add", taskname: "y", tags: ["enqueue"], prompt: `Work in ${root}` });
-  await expect(guardToolCall(granted, { cwd: linked }, dependencies({ HERDR_ALLOW_WORKSPACES: "1", HERDR_ALLOW_DISPATCH: "1" }))).resolves.toBeUndefined();
-  const text = String(granted.input.prompt);
-  expect(text).toContain("does not authorize creating worktrees.");
-  expect(text).not.toContain("Herdr workspaces");
-  expect(text).not.toContain("subagents");
+  await expect(guardToolCall(event(toolName as string, input), { cwd: "/repo" }, granted)).resolves.toMatchObject({ block: true, reason: expect.stringContaining("herdr_task") });
 });
 
 it.each([
