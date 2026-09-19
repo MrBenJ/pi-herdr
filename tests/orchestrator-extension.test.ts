@@ -54,16 +54,28 @@ it("runtime validation rejects action-inapplicable and missing fields before dep
   expect(() => validateTaskInput({ action: "launch", repoRoot: "/repo", worktreeName: "x", branch: "feat/x", baseRef: "main", tabLabel: "x", agentName: "worker", agentKind: "bogus", prompt: "work" })).toThrow();
 });
 
-it("accepts and passes through the allowWorkspaces/allowDispatch permission flags", () => {
+const grantEnv = { HERDR_ALLOW_WORKSPACES: "1", HERDR_ALLOW_DISPATCH: "1" };
+
+it("honors allow* grants only with a matching operator env var, then passes them through", () => {
+  // Schema accepts the booleans (shape only); env enforcement is runtime.
   expect(Value.Check(TaskSchema, { ...launchInput, allowWorkspaces: true, allowDispatch: true })).toBe(true);
   expect(Value.Check(TaskSchema, { ...launchInput, allowWorkspaces: "yes" })).toBe(false);
-  expect(validateTaskInput({ ...launchInput, allowWorkspaces: true, allowDispatch: true })).toMatchObject({ allowWorkspaces: true, allowDispatch: true });
-  expect(validateTaskInput({ ...launchInput, allowWorkspaces: true })).toMatchObject({ allowWorkspaces: true });
-  const bare = validateTaskInput(launchInput);
+  // Payload grant + operator env -> passes through.
+  expect(validateTaskInput({ ...launchInput, allowWorkspaces: true, allowDispatch: true }, grantEnv)).toMatchObject({ allowWorkspaces: true, allowDispatch: true });
+  expect(validateTaskInput({ ...launchInput, allowWorkspaces: true }, { HERDR_ALLOW_WORKSPACES: "1" })).toMatchObject({ allowWorkspaces: true });
+  // CORE PROPERTY: a caller-supplied grant WITHOUT the operator env is rejected,
+  // so untrusted task text steering the tool caller cannot escalate.
+  expect(() => validateTaskInput({ ...launchInput, allowWorkspaces: true }, {})).toThrow(/HERDR_ALLOW_WORKSPACES/);
+  expect(() => validateTaskInput({ ...launchInput, allowWorkspaces: true })).toThrow(/HERDR_ALLOW_WORKSPACES/);
+  expect(() => validateTaskInput({ ...launchInput, allowDispatch: true }, { HERDR_ALLOW_WORKSPACES: "1" })).toThrow(/HERDR_ALLOW_DISPATCH/);
+  // Absent or explicit-false grants need no env and never appear on the output.
+  const bare = validateTaskInput(launchInput, grantEnv);
   expect(bare).not.toHaveProperty("allowWorkspaces");
   expect(bare).not.toHaveProperty("allowDispatch");
-  expect(() => validateTaskInput({ ...launchInput, allowDispatch: "true" })).toThrow();
-  expect(() => validateTaskInput({ action: "inspect", repoRoot: "/repo", allowWorkspaces: true })).toThrow();
+  expect(validateTaskInput({ ...launchInput, allowWorkspaces: false }, {})).not.toHaveProperty("allowWorkspaces");
+  // Type and action guards still apply.
+  expect(() => validateTaskInput({ ...launchInput, allowDispatch: "true" }, grantEnv)).toThrow(/boolean/);
+  expect(() => validateTaskInput({ action: "inspect", repoRoot: "/repo", allowWorkspaces: true }, grantEnv)).toThrow();
 });
 
 it("rejects a concurrent launch within one extension instance", async () => {

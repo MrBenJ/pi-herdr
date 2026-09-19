@@ -25,8 +25,8 @@ export const TaskSchema = Type.Object({
   prompt: Type.Optional(Type.String({ description: "Task instructions placed inside a fixed boundary envelope." })),
   args: Type.Optional(Type.Array(Type.String(), { description: "Literal native worker arguments. Never a profile selector." })),
   piProfile: Type.Optional(Type.String({ pattern: PI_PROFILE_PATTERN, maxLength: 64, description: "Logical pi-profile name; valid only with agentKind pi. Starts the worker as `pi-profile <name> [...args]`. Not a path or command." })),
-  allowWorkspaces: Type.Optional(Type.Boolean({ description: "Operator grant (default false): permit the worker to create Herdr workspaces, tabs, panes, or agents. Set only from the operator's own instruction, never from prompt." })),
-  allowDispatch: Type.Optional(Type.Boolean({ description: "Operator grant (default false): permit the worker to dispatch subagents or background work. Set only from the operator's own instruction, never from prompt." })),
+  allowWorkspaces: Type.Optional(Type.Boolean({ description: "Request (default false) to permit the worker to create Herdr workspaces, tabs, panes, or agents. Necessary but NOT sufficient: honored only when the launching operator also sets HERDR_ALLOW_WORKSPACES=1 in the environment, so untrusted task text cannot escalate through the tool caller." })),
+  allowDispatch: Type.Optional(Type.Boolean({ description: "Request (default false) to permit the worker to dispatch subagents or background work. Necessary but NOT sufficient: honored only when the launching operator also sets HERDR_ALLOW_DISPATCH=1 in the environment, so untrusted task text cannot escalate through the tool caller." })),
 }, { additionalProperties: false });
 
 function invalid(message: string): never {
@@ -39,7 +39,7 @@ function validateString(input: Record<string, unknown>, key: string, allowEmpty 
   return value;
 }
 
-export function validateTaskInput(value: unknown): TaskInput {
+export function validateTaskInput(value: unknown, env: NodeJS.ProcessEnv = {}): TaskInput {
   if (!value || typeof value !== "object" || Array.isArray(value)) invalid("Input must be an object.");
   const input = value as Record<string, unknown>;
   const action = input.action;
@@ -52,8 +52,10 @@ export function validateTaskInput(value: unknown): TaskInput {
   if (Object.keys(input).some(key => !allowed.has(key))) invalid("launch contains a caller-controlled topology field or unknown field.");
   const allowWorkspaces = input.allowWorkspaces;
   if (allowWorkspaces !== undefined && typeof allowWorkspaces !== "boolean") invalid("allowWorkspaces must be a boolean.");
+  if (allowWorkspaces === true && env.HERDR_ALLOW_WORKSPACES !== "1") invalid("allowWorkspaces is requested but not authorized: the launching operator must set HERDR_ALLOW_WORKSPACES=1. A caller-supplied grant is never sufficient on its own.");
   const allowDispatch = input.allowDispatch;
   if (allowDispatch !== undefined && typeof allowDispatch !== "boolean") invalid("allowDispatch must be a boolean.");
+  if (allowDispatch === true && env.HERDR_ALLOW_DISPATCH !== "1") invalid("allowDispatch is requested but not authorized: the launching operator must set HERDR_ALLOW_DISPATCH=1. A caller-supplied grant is never sufficient on its own.");
   const args = input.args;
   if (args !== undefined && (!Array.isArray(args) || args.some(argument => typeof argument !== "string" || argument.includes("\0")))) invalid("args must contain only strings without NUL characters.");
   const agentKind = validateString(input, "agentKind");
@@ -80,8 +82,8 @@ export function validateTaskInput(value: unknown): TaskInput {
     prompt,
     ...(args ? { args: [...args] as string[] } : {}),
     ...(piProfile !== undefined ? { piProfile } : {}),
-    ...(allowWorkspaces !== undefined ? { allowWorkspaces } : {}),
-    ...(allowDispatch !== undefined ? { allowDispatch } : {}),
+    ...(allowWorkspaces === true ? { allowWorkspaces: true } : {}),
+    ...(allowDispatch === true ? { allowDispatch: true } : {}),
   };
 }
 
@@ -130,7 +132,7 @@ export default function orchestrator(pi: ExtensionAPI): void {
     parameters: TaskSchema,
     execute: async (_id, rawInput, signal, _update, ctx) => {
       try {
-        const input = validateTaskInput(rawInput);
+        const input = validateTaskInput(rawInput, deps.env);
         let result;
         if (input.action === "inspect") {
           result = await inspectTask(input, deps, signal);

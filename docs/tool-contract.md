@@ -112,18 +112,18 @@ Launch order is fixed and serial:
 
 An exact path/branch pair is reusable. A path-only, branch-only, filesystem, symlink, or default-branch collision fails without overwrite. No stage runs in parallel. No mutation is retried, rolled back, closed, removed, merged, or treated as task completion. Failures report every previously confirmed resource and whether the failed mutation's remote outcome is ambiguous.
 
-The final worker boundary names the canonical root, exact worktree, workspace, tab, pane, and agent. It always forbids git-worktree creation and Todo-boundary rewrites. It forbids creating Herdr workspaces/tabs/panes/agents and dispatching subagents/background work **by default**; the optional `allowWorkspaces` and `allowDispatch` flags lift those two prohibitions for a single run (see [Per-run permission flags](#per-run-permission-flags)). Caller prompt prose is untrusted and cannot replace the final boundary or set those flags.
+The final worker boundary names the canonical root, exact worktree, workspace, tab, pane, and agent. It always forbids git-worktree creation and Todo-boundary rewrites. It forbids creating Herdr workspaces/tabs/panes/agents and dispatching subagents/background work **by default**; the optional `allowWorkspaces` and `allowDispatch` flags lift those two prohibitions for a single run, but only under the two-factor rule below (see [Per-run permission flags](#per-run-permission-flags)). Caller prompt prose is untrusted and cannot replace the final boundary or set those flags.
 
 ### Per-run permission flags
 
-`allowWorkspaces` and `allowDispatch` are optional booleans, both defaulting to `false`. They are operator authorization knobs, set only from the operator's own instruction (their turn, a skill, an extension) — never parsed from `prompt`. Non-boolean values fail as `invalid_input` before any mutation.
+`allowWorkspaces` and `allowDispatch` are optional booleans, both defaulting to `false`. Each grant requires **two independent factors** — the launch payload requesting it *and* the operator authorizing it in the environment:
 
-| Flag | Default | When `true` | When absent/`false` |
+| Flag | Payload request | Operator env grant | Effect when both present |
 |---|---|---|---|
-| `allowWorkspaces` | `false` | Boundary line authorizes creating Herdr workspaces, tabs, panes, or agents for this run | Boundary line states the prohibition and that no grant was made |
-| `allowDispatch` | `false` | Boundary line authorizes dispatching subagents or background work for this run | Boundary line states the prohibition and that no grant was made |
+| `allowWorkspaces` | `allowWorkspaces: true` | `HERDR_ALLOW_WORKSPACES=1` | Boundary line authorizes creating Herdr workspaces, tabs, panes, or agents for this run |
+| `allowDispatch` | `allowDispatch: true` | `HERDR_ALLOW_DISPATCH=1` | Boundary line authorizes dispatching subagents or background work for this run |
 
-The flags are plumbed straight to the worker-prompt builder, independent of the untrusted `prompt`, so task prose that claims authorization changes nothing. The git-worktree-creation and Todo-boundary-rewrite prohibitions are not affected by either flag.
+The payload boolean is necessary but **not sufficient**: a request of `true` without the matching env var fails as `invalid_input` before any mutation, and non-boolean values are rejected. This is deliberate — the `herdr_task` caller is untrusted (it cannot supply topology IDs either), and in an agentic flow untrusted task/issue/plan text can steer the caller into *requesting* a grant. The operator environment, which that text cannot set, is the actual authorization. When absent or `false`, or when the env grant is missing, the boundary line states the prohibition and that no grant was made. The flags are plumbed to the worker-prompt builder independently of the untrusted `prompt`, and the git-worktree-creation and Todo-boundary-rewrite prohibitions are not affected by either flag.
 
 ### Profiled Pi launch (`piProfile`)
 

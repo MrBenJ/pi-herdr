@@ -80,16 +80,22 @@ Add the optional `piProfile` field to start the worker through [`pi-profile`](ht
 
 #### Per-run permission flags
 
-By default the worker boundary forbids the worker from creating Herdr workspaces/tabs/panes/agents and from dispatching subagents or background work. Two optional booleans lift those prohibitions for a single launch:
+By default the worker boundary forbids the worker from creating Herdr workspaces/tabs/panes/agents and from dispatching subagents or background work. Lifting either prohibition for a launch takes **two independent factors**: the launch payload requests it, *and* the launching operator has granted it in the environment.
+
+```bash
+# The operator authorizes escalation for the process that runs the extension:
+export HERDR_ALLOW_WORKSPACES=1
+export HERDR_ALLOW_DISPATCH=1
+```
 
 ```json
 {"tool":"herdr_task","input":{"action":"launch","repoRoot":"/absolute/project","worktreeName":"issue-123","branch":"feat/issue-123","baseRef":"main","tabLabel":"issue-123","agentName":"issue-123","agentKind":"pi","allowWorkspaces":true,"allowDispatch":true,"prompt":"Implement the approved plan and report evidence."}}
 ```
 
-- `allowWorkspaces` (default `false`) permits the worker to create Herdr workspaces, tabs, panes, or agents.
-- `allowDispatch` (default `false`) permits the worker to dispatch subagents or background work.
-- When set, the corresponding boundary line reads as authorized for that run; when absent or `false`, the boundary states the prohibition and that no grant was made. Non-boolean values are rejected as `invalid_input`.
-- These are **operator authorization knobs**, not an independent approval broker: set them only from your own instruction (your turn, a skill, an extension). They are never derived from the untrusted `prompt`, so task prose cannot grant itself either permission. The git-worktree-creation ban and the Todo-boundary-rewrite ban remain absolute regardless of these flags.
+- `allowWorkspaces` (default `false`) requests permission for the worker to create Herdr workspaces, tabs, panes, or agents. It is honored only when `HERDR_ALLOW_WORKSPACES=1` is set in the extension's environment.
+- `allowDispatch` (default `false`) requests permission for the worker to dispatch subagents or background work. It is honored only when `HERDR_ALLOW_DISPATCH=1` is set.
+- The payload boolean is **necessary but not sufficient**. Requesting a grant without the matching operator env var fails as `invalid_input` — a caller-supplied grant is never enough on its own. Non-boolean values are also rejected.
+- This two-factor rule is the point: the `herdr_task` caller is treated as untrusted (it cannot supply topology IDs either), and in an agentic flow untrusted task/issue/plan text can steer the caller into requesting `allowDispatch: true`. Only the operator's environment — which task prose cannot set — actually authorizes it. When both factors are present, the corresponding boundary line reads as authorized for that run; otherwise it states the prohibition. The flags are never derived from the untrusted `prompt`, and the git-worktree-creation and Todo-boundary-rewrite bans remain absolute regardless of these flags.
 
 While the orchestrator is loaded, its policy hook blocks direct Herdr topology creation/start calls and direct Bash `git worktree add|move|remove`. It also bounds Todo calls tagged `enqueue` to the current canonical repository and appends a repository execution footer. `herdr_pane run`/`send-text` into an existing pane are not classified. This is defense in depth, not a shell sandbox.
 

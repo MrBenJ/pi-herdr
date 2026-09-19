@@ -584,7 +584,7 @@ END PI-HERDR ORCHESTRATION BOUNDARY v1
 
 Use a generated random fence token around caller prose so caller content cannot forge the task delimiter. The policy boundary itself remains fixed and last.
 
-The workspace/tab/pane/agent line and the subagent/background-work line are prohibited **by default**. Two trusted flags on `TaskLaunchInput` — `allowWorkspaces` and `allowDispatch` — lift each prohibition when the operator explicitly grants it (their turn, a skill, an extension). The flags are plumbed straight to `buildWorkerPrompt`; they are **never** derived from the untrusted `task`/`prompt` text, so an injected "you are authorized" string cannot grant itself permission. When a flag is set, its line instead reads:
+The workspace/tab/pane/agent line and the subagent/background-work line are prohibited **by default**. Two flags on `TaskLaunchInput` — `allowWorkspaces` and `allowDispatch` — lift each prohibition, but only under a two-factor rule: the launch payload requests the grant *and* the operator authorizes it via an environment variable (`HERDR_ALLOW_WORKSPACES=1` / `HERDR_ALLOW_DISPATCH=1`), enforced in `validateTaskInput`. The payload request alone is rejected as `invalid_input`, because the `herdr_task` caller is untrusted (in an agentic flow untrusted task text can steer it into requesting a grant); only the operator environment, which that text cannot set, authorizes it. The grants are then plumbed straight to `buildWorkerPrompt`, never derived from the untrusted `task`/`prompt` text. When a grant is honored, its line instead reads:
 
 ```text
 Creating Herdr workspaces, tabs, panes, or agents is authorized for this run; otherwise it is prohibited by default.
