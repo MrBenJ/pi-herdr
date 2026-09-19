@@ -48,7 +48,7 @@ const createdWorkspace = () => tool("workspace", "create", { type: "workspace_cr
 const createdTab = (workspaceId: string) => tool("tab", "create", { type: "tab_created", tab: { tab_id: `${workspaceId}:t2` }, root_pane: { pane_id: `${workspaceId}:p2` } });
 const agentResult = (type: "agent_started" | "agent_prompted", paneId: string) => tool("agent", type === "agent_started" ? "start" : "prompt", { type, agent: { name: "reviewer", pane_id: paneId } });
 
-function deps(queue: Array<ReturnType<typeof tool> | Error>, calls: Array<[string, Record<string, unknown>]>, gitRunner: GitRunner = git): OrchestratorDependencies {
+function deps(queue: Array<ReturnType<typeof tool> | Error>, calls: Array<[string, Record<string, unknown>]>, gitRunner: GitRunner = git, envExtra: NodeJS.ProcessEnv = {}): OrchestratorDependencies {
   const herdr: HerdrExecutor = async (group, input) => {
     calls.push([group, input]);
     const next = queue.shift();
@@ -56,7 +56,7 @@ function deps(queue: Array<ReturnType<typeof tool> | Error>, calls: Array<[strin
     if (next instanceof Error) throw next;
     return next;
   };
-  return { git: gitRunner, herdr, paths: { realpath: fs.realpath, lstat: fs.lstat, access: fs.access }, env: { HERDR_ENV: "1" }, sleep: async () => {} };
+  return { git: gitRunner, herdr, paths: { realpath: fs.realpath, lstat: fs.lstat, access: fs.access }, env: { HERDR_ENV: "1", ...envExtra }, sleep: async () => {} };
 }
 
 function request(root: string): TaskLaunchInput {
@@ -80,9 +80,24 @@ it("reuses the exact worktree and sole workspace, then creates one tab and worke
   expect(result.resources).toMatchObject({ worktree: { path: worktree, disposition: "existing" }, workspace: { workspaceId: "wE", disposition: "existing" }, tab: { tabId: "wE:t2", paneId: "wE:p2" }, agent: { name: "reviewer", paneId: "wE:p2" }, promptSubmitted: true });
   expect(calls.slice(2).map(([group, input]) => [group, input.action])).toEqual([["tab", "create"], ["agent", "start"], ["agent", "prompt"]]);
   expect(calls.some(([group, input]) => group === "workspace" && input.action === "create")).toBe(false);
+  // Default env: the worker prompt carries the prohibition, no grant.
+  const submitted = String(calls.find(([group, input]) => group === "agent" && input.action === "prompt")![1].text);
+  expect(submitted).toContain("Do not create Herdr workspaces, tabs, panes, or agents unless this run was explicitly authorized to; none was granted.");
+  expect(submitted).toContain("Do not dispatch subagents or background work unless this run was explicitly authorized to; none was granted.");
   expect(calls[2]![1]).toEqual({ action: "create", workspaceId: "wE", cwd: worktree, label: "review", focus: false });
   expect(calls[3]![1]).toEqual({ action: "start", name: "reviewer", kind: "pi", paneId: "wE:p2", args: [] });
   expect(calls[4]![1].text).toContain("Authorized worktree: " + worktree);
+});
+
+it("authorizes the worker prompt from the operator HERDR_ALLOW_* env, not from any caller input", async () => {
+  const { root } = await makeRepo(); const calls: Array<[string, Record<string, unknown>]> = [];
+  await launchTask(request(root), deps([
+    workspaceList(["wE"]), paneList("wE", root), createdTab("wE"), agentResult("agent_started", "wE:p2"), agentResult("agent_prompted", "wE:p2"),
+  ], calls, git, { HERDR_ALLOW_WORKSPACES: "1", HERDR_ALLOW_DISPATCH: "1" }));
+  const submitted = String(calls.find(([group, input]) => group === "agent" && input.action === "prompt")![1].text);
+  expect(submitted).toContain("Creating execution topology (Herdr workspaces, tabs, panes, or agents) is authorized for this run via herdr_task launch");
+  expect(submitted).toContain("Dispatching subagents or background work is authorized for this run");
+  expect(submitted).not.toContain("none was granted.");
 });
 
 it("creates one no-focus main-repository workspace only when inventory has no match", async () => {

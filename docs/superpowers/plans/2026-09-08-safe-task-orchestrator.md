@@ -575,14 +575,21 @@ Authorized tab: <tabId>
 Authorized pane: <paneId>
 Authorized agent: <agentName>
 Do not create, move, or remove git worktrees.
-Do not create Herdr workspaces, tabs, panes, or agents.
-Do not dispatch subagents or background work.
+Do not create Herdr workspaces, tabs, panes, or agents unless this run was explicitly authorized to; none was granted.
+Do not dispatch subagents or background work unless this run was explicitly authorized to; none was granted.
 Do not rewrite Todo execution boundaries.
 Report a blocker instead of inventing infrastructure.
 END PI-HERDR ORCHESTRATION BOUNDARY v1
 ```
 
 Use a generated random fence token around caller prose so caller content cannot forge the task delimiter. The policy boundary itself remains fixed and last.
+
+The workspace/tab/pane/agent line and the subagent/background-work line are prohibited **by default**. The only thing that lifts either prohibition is the operator's environment (`HERDR_ALLOW_WORKSPACES=1` / `HERDR_ALLOW_DISPATCH=1`), read by `launch.ts` from `deps.env` and passed to `buildWorkerPrompt`. There is deliberately **no caller-supplied field** for it: `herdr_task launch` has no `allowWorkspaces`/`allowDispatch` parameter, and passing one is rejected as an unknown caller-controlled field. The `herdr_task` caller is untrusted (in an agentic flow untrusted task text can steer it into requesting things), so keeping the grant off the schema means no such prose can ever obtain it — only the operator environment, which that text cannot set, authorizes it. When a grant is present, its line instead reads:
+
+```text
+Creating execution topology (Herdr workspaces, tabs, panes, or agents) is authorized for this run via herdr_task launch; the direct herdr_* topology tools stay disabled.
+Dispatching subagents or background work is authorized for this run; otherwise it is prohibited by default.
+```
 
 - [x] **Step 2: Run prompt tests and confirm RED**
 
@@ -604,6 +611,8 @@ export interface WorkerPromptInput {
   tabId: string;
   paneId: string;
   agentName: string;
+  allowWorkspaces?: boolean; // trusted; never from `task`
+  allowDispatch?: boolean;   // trusted; never from `task`
 }
 
 export function buildWorkerPrompt(input: WorkerPromptInput): string;
@@ -875,6 +884,8 @@ This Todo prompt does not authorize creating Herdr workspaces, worktrees, tabs, 
 Use herdr_task launch for execution topology.
 END REPOSITORY EXECUTION BOUNDARY v1
 ```
+
+This footer and the topology `tool_call` guard are absolute and env-independent: the `allowWorkspaces`/`allowDispatch` grants change only the worker prompt (what the worker is told it may do), not the guard. A granted worker creates topology through `herdr_task launch`, which the guard permits; the env grant is never a process-wide guard bypass.
 
 - [x] **Step 10: Prove factory isolation and disposal**
 

@@ -54,6 +54,20 @@ it("runtime validation rejects action-inapplicable and missing fields before dep
   expect(() => validateTaskInput({ action: "launch", repoRoot: "/repo", worktreeName: "x", branch: "feat/x", baseRef: "main", tabLabel: "x", agentName: "worker", agentKind: "bogus", prompt: "work" })).toThrow();
 });
 
+it("refuses caller-supplied allowWorkspaces/allowDispatch: authorization is operator-env-only, never a payload field", () => {
+  // Not on the public schema, so schema validation rejects them outright.
+  expect(Value.Check(TaskSchema, { ...launchInput, allowWorkspaces: true })).toBe(false);
+  expect(Value.Check(TaskSchema, { ...launchInput, allowDispatch: true })).toBe(false);
+  // Runtime validation rejects them as unknown caller-controlled fields, so
+  // untrusted task prose can never request or synthesize the grant.
+  expect(() => validateTaskInput({ ...launchInput, allowWorkspaces: true })).toThrow(/unknown field|caller-controlled/);
+  expect(() => validateTaskInput({ ...launchInput, allowDispatch: true })).toThrow(/unknown field|caller-controlled/);
+  // A clean launch input still validates and carries no grant field.
+  const clean = validateTaskInput(launchInput);
+  expect(clean).not.toHaveProperty("allowWorkspaces");
+  expect(clean).not.toHaveProperty("allowDispatch");
+});
+
 it("rejects a concurrent launch within one extension instance", async () => {
   let release!: (value: typeof launchResult) => void;
   vi.mocked(launchTask).mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));

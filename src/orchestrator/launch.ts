@@ -236,6 +236,10 @@ export async function launchTask(input: TaskLaunchInput, deps: OrchestratorDepen
       tabId,
       paneId,
       agentName: input.agentName,
+      // Authorization comes solely from the operator's environment, never from
+      // the caller-supplied task input, so untrusted prose cannot escalate.
+      allowWorkspaces: deps.env.HERDR_ALLOW_WORKSPACES === "1",
+      allowDispatch: deps.env.HERDR_ALLOW_DISPATCH === "1",
     });
     const promptResponse = await herdrMutation(deps, repository, "agent", { action: "prompt", target: input.agentName, text }, "agent-prompt", resources, signal);
     const promptResult = mutationResult(promptResponse, "agent", "prompt", "agent_prompted", "agent-prompt");

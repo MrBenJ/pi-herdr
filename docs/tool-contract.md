@@ -112,7 +112,20 @@ Launch order is fixed and serial:
 
 An exact path/branch pair is reusable. A path-only, branch-only, filesystem, symlink, or default-branch collision fails without overwrite. No stage runs in parallel. No mutation is retried, rolled back, closed, removed, merged, or treated as task completion. Failures report every previously confirmed resource and whether the failed mutation's remote outcome is ambiguous.
 
-The final worker boundary names the canonical root, exact worktree, workspace, tab, pane, and agent; it forbids worktree/layout/agent creation, subagents, background work, and Todo-boundary rewrites. Caller prompt prose is untrusted and cannot replace the final boundary.
+The final worker boundary names the canonical root, exact worktree, workspace, tab, pane, and agent. It always forbids git-worktree creation and Todo-boundary rewrites. It forbids creating Herdr workspaces/tabs/panes/agents and dispatching subagents/background work **by default**; those two prohibitions are lifted only by the operator environment described below (see [Worker permission grants](#worker-permission-grants-operator-environment-only)). Caller prompt prose is untrusted and cannot replace the final boundary or grant those capabilities.
+
+### Worker permission grants (operator environment only)
+
+Workspace/dispatch authorization is **not a caller-supplied field**. `herdr_task launch` has no `allowWorkspaces`/`allowDispatch` parameter — passing one is rejected as an unknown caller-controlled field — and the authorization is read solely from the operator's environment at launch time:
+
+| Env var | Effect when `=1` |
+|---|---|
+| `HERDR_ALLOW_WORKSPACES` | The worker boundary authorizes creating execution topology (Herdr workspaces, tabs, panes, or agents) for every worker this process launches |
+| `HERDR_ALLOW_DISPATCH` | The worker boundary authorizes dispatching subagents or background work |
+
+This is deliberate: the `herdr_task` caller is untrusted (it cannot supply topology IDs either), and in an agentic flow untrusted task/issue/plan text can steer the caller into *requesting* things. Because there is no payload field to request the grant, no such prose can obtain it — only the operator environment, which task text cannot set, authorizes it. When a var is unset the boundary line states the prohibition and that no grant was made. The grant is read by `launch.ts` from `deps.env` and passed to `buildWorkerPrompt` independently of the untrusted `prompt`; the git-worktree-creation and Todo-boundary-rewrite prohibitions are unaffected.
+
+The grants change only the **worker prompt** — the authorization the worker is told it holds. They deliberately do **not** relax the `tool_call` guard, which stays an absolute block on direct `herdr_*` topology so that an operator env var can never become a process-wide guard bypass. A worker granted `allowWorkspaces` therefore creates topology through `herdr_task launch` (which the guard permits, including nested orchestration), not through the direct primitive tools; `allowDispatch` authorizes the worker's own subagent/background capabilities, which the guard never governed.
 
 ### Profiled Pi launch (`piProfile`)
 
@@ -144,9 +157,9 @@ Reconciling a profiled failure: nothing is closed, killed, renamed back, or retr
 
 The tab's shell must be a bash- or zsh-compatible interactive shell at its prompt. Printable arguments are also literal under any POSIX `sh`; `$'...'` control-character arguments need bash, zsh, or ksh. Other shells (for example fish, which treats `\\` inside single quotes differently) can receive altered argument text, though never an altered command.
 
-While this entry point is loaded, a `tool_call` hook blocks direct `herdr_workspace create`, `herdr_tab create`, `herdr_pane split`, `herdr_agent start`, and recognizable Bash `git worktree add|move|remove` commands. Read/inspect/prompt/wait and explicitly confirmed close operations retain primitive behavior. `herdr_pane run` and `send-text` are not classified, so a caller holding the primitive tools can still type an agent command into an existing pane; the hook is not a substitute for withholding those tools from workers. The Bash classification is defense in depth, not a shell sandbox.
+While this entry point is loaded, a `tool_call` hook unconditionally blocks direct `herdr_workspace create`, `herdr_tab create`, `herdr_pane split`, `herdr_agent start`, and recognizable Bash `git worktree add|move|remove` commands — no `HERDR_ALLOW_*` grant relaxes this, so an operator env var can never become a process-wide bypass (see [Worker permission grants](#worker-permission-grants-operator-environment-only)). A worker granted `allowWorkspaces` creates topology via `herdr_task launch`, which the hook permits. Read/inspect/prompt/wait and explicitly confirmed close operations retain primitive behavior. `herdr_pane run` and `send-text` are not classified, so a caller holding the primitive tools can still type an agent command into an existing pane; the hook is not a substitute for withholding those tools from workers. The Bash classification is defense in depth, not a shell sandbox.
 
-For `todo add`/`todo update` calls explicitly tagged `enqueue`, the hook requires a prompt, rejects absolute filesystem paths outside the current canonical repository, and appends an idempotent repository boundary. Todo remains tracking-only and no foreign Todo store is opened or mutated.
+For `todo add`/`todo update` calls explicitly tagged `enqueue`, the hook requires a prompt, rejects absolute filesystem paths outside the current canonical repository, and appends an idempotent, fixed repository boundary (the enqueued Todo prompt never itself authorizes infrastructure, independent of any `HERDR_ALLOW_*` grant). Todo remains tracking-only and no foreign Todo store is opened or mutated.
 
 ## Errors
 

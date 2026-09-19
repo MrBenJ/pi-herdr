@@ -46,6 +46,10 @@ export function validateTaskInput(value: unknown): TaskInput {
     return { action, repoRoot: validateString(input, "repoRoot") };
   }
   if (action !== "launch") invalid("action must be inspect or launch.");
+  // Workspace/dispatch authorization is NOT a caller-controlled field: it is
+  // driven solely by the operator's HERDR_ALLOW_* environment at launch time
+  // (see launch.ts). Keeping it off the public schema means untrusted task
+  // prose can never request or synthesize the grant through the tool caller.
   const allowed = new Set(["action", "repoRoot", "worktreeName", "branch", "baseRef", "tabLabel", "agentName", "agentKind", "prompt", "args", "piProfile"]);
   if (Object.keys(input).some(key => !allowed.has(key))) invalid("launch contains a caller-controlled topology field or unknown field.");
   const args = input.args;

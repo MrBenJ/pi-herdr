@@ -55,7 +55,7 @@ Each tool takes a flat object with `action`; required and allowed fields vary by
 
 ### Safe repository-bound launch
 
-`herdr_task launch` is the default way to create worker topology. It accepts a canonical main-checkout `repoRoot`, a single `worktreeName`, branch/base ref, labels, worker kind/name, native args, and task prompt. It constructs exactly `<repoRoot>/.worktrees/<worktreeName>`; callers cannot supply a worktree path, workspace ID, tab ID, or pane ID.
+`herdr_task launch` is the default way to create worker topology. It accepts a canonical main-checkout `repoRoot`, a single `worktreeName`, branch/base ref, labels, worker kind/name, native args, and task prompt. It constructs exactly `<repoRoot>/.worktrees/<worktreeName>`; callers cannot supply a worktree path, workspace ID, tab ID, or pane ID (nor a permission grant — see [Worker permission grants](#worker-permission-grants-operator-environment-only)).
 
 The launch is serial: validate repository → inventory git and Herdr → exactly create/reuse the worktree → reuse the sole matching workspace or create one no-focus workspace → create one no-focus tab → start one worker → submit the fixed boundary prompt. Duplicate matching workspaces fail closed. Partial resources remain after failure and are returned as confirmed handles; ambiguous mutations are never retried or cleaned up automatically. `/.worktrees/` must already be ignored.
 
@@ -78,7 +78,21 @@ Add the optional `piProfile` field to start the worker through [`pi-profile`](ht
 - `pi-profile` and `pi` must be on the `PATH` of the shell Herdr opens in a new tab, and that shell must be bash- or zsh-compatible.
 - A failed profiled launch reports the confirmed worktree/workspace/tab plus `launcher.commandSubmitted`, is never retried or cleaned up, and never includes the prompt, arguments, command text, or profile environment. See [docs/tool-contract.md](docs/tool-contract.md#profiled-pi-launch-piprofile) for stages and reconciliation.
 
-While the orchestrator is loaded, its policy hook blocks direct Herdr topology creation/start calls and direct Bash `git worktree add|move|remove`. It also bounds Todo calls tagged `enqueue` to the current canonical repository and appends a repository execution footer. `herdr_pane run`/`send-text` into an existing pane are not classified. This is defense in depth, not a shell sandbox.
+#### Worker permission grants (operator environment only)
+
+By default the worker boundary forbids the worker from creating Herdr workspaces/tabs/panes/agents and from dispatching subagents or background work. The **only** way to lift either prohibition is the launching operator's environment — there is deliberately **no caller-supplied field** for it, so no untrusted task prose (and no prose-influenced tool caller) can ever request or synthesize the grant:
+
+```bash
+# The operator authorizes the capability for the process that runs the extension:
+export HERDR_ALLOW_WORKSPACES=1   # workers may create execution topology
+export HERDR_ALLOW_DISPATCH=1     # workers may dispatch subagents / background work
+```
+
+- The `herdr_task launch` payload has no `allowWorkspaces`/`allowDispatch` field; passing one is rejected as an unknown caller-controlled field. Authorization is read solely from `HERDR_ALLOW_WORKSPACES` / `HERDR_ALLOW_DISPATCH` at launch time and applied to every worker that process launches. Off unless the operator opts in.
+- When a grant is set, the corresponding worker-boundary line reads as authorized for that run; otherwise it states the prohibition and that no grant was made. The grant is never derived from the untrusted `prompt`.
+- The grants change only the **worker prompt** — the authorization the worker is told it has. They do **not** relax the topology guard below, which stays absolute so the env var can never become a process-wide bypass of the direct topology tools. A worker granted `allowWorkspaces` creates topology through `herdr_task launch` (which the guard permits, including nested), not through the direct `herdr_*` primitive tools; `allowDispatch` authorizes the worker's own subagent/background capabilities, which the guard never touched. The git-worktree-creation and Todo-boundary-rewrite bans remain absolute regardless.
+
+While the orchestrator is loaded, its policy hook unconditionally blocks direct Herdr topology creation/start calls (`herdr_workspace/tab/pane/agent`) and direct Bash `git worktree add|move|remove`, regardless of any `HERDR_ALLOW_*` grant — topology always goes through `herdr_task launch`. It also bounds Todo calls tagged `enqueue` to the current canonical repository and appends a fixed repository execution footer. `herdr_pane run`/`send-text` into an existing pane are not classified. This is defense in depth, not a shell sandbox.
 
 To load only one layer, use Pi's package object filters in settings (paths are relative to this package):
 

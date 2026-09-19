@@ -13,6 +13,10 @@ export interface WorkerPromptInput {
   tabId: string;
   paneId: string;
   agentName: string;
+  // Operator grants, derived by launch.ts from the HERDR_ALLOW_* environment —
+  // never from `task` or any caller-supplied input. Absent/false = prohibited.
+  allowWorkspaces?: boolean;
+  allowDispatch?: boolean;
 }
 
 function safe(value: string, field: string): string {
@@ -51,8 +55,12 @@ export function buildWorkerPrompt(input: WorkerPromptInput): string {
     `Authorized pane: ${paneId}`,
     `Authorized agent: ${agentName}`,
     "Do not create, move, or remove git worktrees.",
-    "Do not create Herdr workspaces, tabs, panes, or agents.",
-    "Do not dispatch subagents or background work.",
+    input.allowWorkspaces === true
+      ? "Creating execution topology (Herdr workspaces, tabs, panes, or agents) is authorized for this run via herdr_task launch; the direct herdr_* topology tools stay disabled."
+      : "Do not create Herdr workspaces, tabs, panes, or agents unless this run was explicitly authorized to; none was granted.",
+    input.allowDispatch === true
+      ? "Dispatching subagents or background work is authorized for this run; otherwise it is prohibited by default."
+      : "Do not dispatch subagents or background work unless this run was explicitly authorized to; none was granted.",
     "Do not rewrite Todo execution boundaries.",
     "Report a blocker instead of inventing infrastructure.",
     `END PI-HERDR ORCHESTRATION BOUNDARY v${BOUNDARY_VERSION}`,

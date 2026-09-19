@@ -120,6 +120,10 @@ function inside(root: string, candidate: string): boolean {
 }
 
 function boundary(root: string): string {
+  // Absolute and env-independent, matching the topology guard above: an enqueued
+  // Todo prompt never itself authorizes infrastructure. A worker granted
+  // allowWorkspaces/allowDispatch creates topology through herdr_task launch,
+  // not by treating this Todo boundary as permission.
   return [
     `BEGIN REPOSITORY EXECUTION BOUNDARY v${BOUNDARY_VERSION}`,
     `Canonical repository: ${root}`,
@@ -154,6 +158,11 @@ export async function guardToolCall(event: ToolCallEvent, context: { cwd: string
   const mutation = TOPOLOGY_MUTATIONS.get(event.toolName);
   const input = event.input as Record<string, unknown>;
   if (mutation && input.action === mutation) {
+    // Absolute and env-independent: the orchestrator session must always route
+    // topology through herdr_task launch, never the direct primitive tools. A
+    // worker granted allowWorkspaces nests through herdr_task launch (which this
+    // guard permits), so no env-based relaxation is needed or safe here — that
+    // would turn an operator env var into a process-wide guard bypass.
     return blocked(`Direct topology mutation is disabled while the orchestrator is enabled. Use herdr_task launch instead of ${event.toolName} ${mutation}.`);
   }
   if (event.toolName === "bash" && typeof event.input.command === "string" && containsWorktreeMutation(event.input.command)) {
