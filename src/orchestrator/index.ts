@@ -25,6 +25,8 @@ export const TaskSchema = Type.Object({
   prompt: Type.Optional(Type.String({ description: "Task instructions placed inside a fixed boundary envelope." })),
   args: Type.Optional(Type.Array(Type.String(), { description: "Literal native worker arguments. Never a profile selector." })),
   piProfile: Type.Optional(Type.String({ pattern: PI_PROFILE_PATTERN, maxLength: 64, description: "Logical pi-profile name; valid only with agentKind pi. Starts the worker as `pi-profile <name> [...args]`. Not a path or command." })),
+  allowWorkspaces: Type.Optional(Type.Boolean({ description: "Operator grant (default false): permit the worker to create Herdr workspaces, tabs, panes, or agents. Set only from the operator's own instruction, never from prompt." })),
+  allowDispatch: Type.Optional(Type.Boolean({ description: "Operator grant (default false): permit the worker to dispatch subagents or background work. Set only from the operator's own instruction, never from prompt." })),
 }, { additionalProperties: false });
 
 function invalid(message: string): never {
@@ -46,8 +48,12 @@ export function validateTaskInput(value: unknown): TaskInput {
     return { action, repoRoot: validateString(input, "repoRoot") };
   }
   if (action !== "launch") invalid("action must be inspect or launch.");
-  const allowed = new Set(["action", "repoRoot", "worktreeName", "branch", "baseRef", "tabLabel", "agentName", "agentKind", "prompt", "args", "piProfile"]);
+  const allowed = new Set(["action", "repoRoot", "worktreeName", "branch", "baseRef", "tabLabel", "agentName", "agentKind", "prompt", "args", "piProfile", "allowWorkspaces", "allowDispatch"]);
   if (Object.keys(input).some(key => !allowed.has(key))) invalid("launch contains a caller-controlled topology field or unknown field.");
+  const allowWorkspaces = input.allowWorkspaces;
+  if (allowWorkspaces !== undefined && typeof allowWorkspaces !== "boolean") invalid("allowWorkspaces must be a boolean.");
+  const allowDispatch = input.allowDispatch;
+  if (allowDispatch !== undefined && typeof allowDispatch !== "boolean") invalid("allowDispatch must be a boolean.");
   const args = input.args;
   if (args !== undefined && (!Array.isArray(args) || args.some(argument => typeof argument !== "string" || argument.includes("\0")))) invalid("args must contain only strings without NUL characters.");
   const agentKind = validateString(input, "agentKind");
@@ -74,6 +80,8 @@ export function validateTaskInput(value: unknown): TaskInput {
     prompt,
     ...(args ? { args: [...args] as string[] } : {}),
     ...(piProfile !== undefined ? { piProfile } : {}),
+    ...(allowWorkspaces !== undefined ? { allowWorkspaces } : {}),
+    ...(allowDispatch !== undefined ? { allowDispatch } : {}),
   };
 }
 

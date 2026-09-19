@@ -54,6 +54,18 @@ it("runtime validation rejects action-inapplicable and missing fields before dep
   expect(() => validateTaskInput({ action: "launch", repoRoot: "/repo", worktreeName: "x", branch: "feat/x", baseRef: "main", tabLabel: "x", agentName: "worker", agentKind: "bogus", prompt: "work" })).toThrow();
 });
 
+it("accepts and passes through the allowWorkspaces/allowDispatch permission flags", () => {
+  expect(Value.Check(TaskSchema, { ...launchInput, allowWorkspaces: true, allowDispatch: true })).toBe(true);
+  expect(Value.Check(TaskSchema, { ...launchInput, allowWorkspaces: "yes" })).toBe(false);
+  expect(validateTaskInput({ ...launchInput, allowWorkspaces: true, allowDispatch: true })).toMatchObject({ allowWorkspaces: true, allowDispatch: true });
+  expect(validateTaskInput({ ...launchInput, allowWorkspaces: true })).toMatchObject({ allowWorkspaces: true });
+  const bare = validateTaskInput(launchInput);
+  expect(bare).not.toHaveProperty("allowWorkspaces");
+  expect(bare).not.toHaveProperty("allowDispatch");
+  expect(() => validateTaskInput({ ...launchInput, allowDispatch: "true" })).toThrow();
+  expect(() => validateTaskInput({ action: "inspect", repoRoot: "/repo", allowWorkspaces: true })).toThrow();
+});
+
 it("rejects a concurrent launch within one extension instance", async () => {
   let release!: (value: typeof launchResult) => void;
   vi.mocked(launchTask).mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
