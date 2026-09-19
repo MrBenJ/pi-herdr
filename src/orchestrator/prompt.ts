@@ -13,8 +13,8 @@ export interface WorkerPromptInput {
   tabId: string;
   paneId: string;
   agentName: string;
-  // Trusted permission flags, plumbed from TaskLaunchInput — never derived
-  // from `task` (untrusted caller prose). Absent/false = prohibited default.
+  // Operator grants, derived by launch.ts from the HERDR_ALLOW_* environment —
+  // never from `task` or any caller-supplied input. Absent/false = prohibited.
   allowWorkspaces?: boolean;
   allowDispatch?: boolean;
 }

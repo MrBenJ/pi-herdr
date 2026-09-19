@@ -24,11 +24,6 @@ export interface TaskLaunchInput {
   prompt: string;
   args?: string[];
   piProfile?: string;
-  // Trusted permission flags. Set only from the operator's own instruction
-  // (their turn, a skill, an extension) — never from `prompt`, which is
-  // untrusted caller prose. Absent/false means prohibited by default.
-  allowWorkspaces?: boolean;
-  allowDispatch?: boolean;
 }
 
 export type TaskInput = TaskInspectInput | TaskLaunchInput;
