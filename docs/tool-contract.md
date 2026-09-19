@@ -95,7 +95,7 @@ Use actual returned creation handles; do not derive IDs from a requested name or
 | Action | Required | Optional | Mutation? |
 |---|---|---|---|
 | inspect | repoRoot | — | no |
-| launch | repoRoot, worktreeName, branch, baseRef, tabLabel, agentName, agentKind, prompt | args, piProfile | yes |
+| launch | repoRoot, worktreeName, branch, baseRef, tabLabel, agentName, agentKind, prompt | args, piProfile, allowWorkspaces, allowDispatch | yes |
 
 `repoRoot` must be the absolute, real path of a canonical main checkout. Linked-worktree and nested-directory roots are rejected. `/.worktrees/` must already be ignored. `worktreeName` is a 1–80 character filename slug beginning with an alphanumeric; separators, dot segments, `.claude`, controls, whitespace, and leading dashes are rejected. The only derived path is `<repoRoot>/.worktrees/<worktreeName>`. Callers cannot submit `worktreePath`, `workspaceId`, `tabId`, `paneId`, or focus settings.
 
@@ -112,7 +112,18 @@ Launch order is fixed and serial:
 
 An exact path/branch pair is reusable. A path-only, branch-only, filesystem, symlink, or default-branch collision fails without overwrite. No stage runs in parallel. No mutation is retried, rolled back, closed, removed, merged, or treated as task completion. Failures report every previously confirmed resource and whether the failed mutation's remote outcome is ambiguous.
 
-The final worker boundary names the canonical root, exact worktree, workspace, tab, pane, and agent; it forbids worktree/layout/agent creation, subagents, background work, and Todo-boundary rewrites. Caller prompt prose is untrusted and cannot replace the final boundary.
+The final worker boundary names the canonical root, exact worktree, workspace, tab, pane, and agent. It always forbids git-worktree creation and Todo-boundary rewrites. It forbids creating Herdr workspaces/tabs/panes/agents and dispatching subagents/background work **by default**; the optional `allowWorkspaces` and `allowDispatch` flags lift those two prohibitions for a single run (see [Per-run permission flags](#per-run-permission-flags)). Caller prompt prose is untrusted and cannot replace the final boundary or set those flags.
+
+### Per-run permission flags
+
+`allowWorkspaces` and `allowDispatch` are optional booleans, both defaulting to `false`. They are operator authorization knobs, set only from the operator's own instruction (their turn, a skill, an extension) — never parsed from `prompt`. Non-boolean values fail as `invalid_input` before any mutation.
+
+| Flag | Default | When `true` | When absent/`false` |
+|---|---|---|---|
+| `allowWorkspaces` | `false` | Boundary line authorizes creating Herdr workspaces, tabs, panes, or agents for this run | Boundary line states the prohibition and that no grant was made |
+| `allowDispatch` | `false` | Boundary line authorizes dispatching subagents or background work for this run | Boundary line states the prohibition and that no grant was made |
+
+The flags are plumbed straight to the worker-prompt builder, independent of the untrusted `prompt`, so task prose that claims authorization changes nothing. The git-worktree-creation and Todo-boundary-rewrite prohibitions are not affected by either flag.
 
 ### Profiled Pi launch (`piProfile`)
 

@@ -55,7 +55,7 @@ Each tool takes a flat object with `action`; required and allowed fields vary by
 
 ### Safe repository-bound launch
 
-`herdr_task launch` is the default way to create worker topology. It accepts a canonical main-checkout `repoRoot`, a single `worktreeName`, branch/base ref, labels, worker kind/name, native args, and task prompt. It constructs exactly `<repoRoot>/.worktrees/<worktreeName>`; callers cannot supply a worktree path, workspace ID, tab ID, or pane ID.
+`herdr_task launch` is the default way to create worker topology. It accepts a canonical main-checkout `repoRoot`, a single `worktreeName`, branch/base ref, labels, worker kind/name, native args, optional per-run permission flags, and task prompt. It constructs exactly `<repoRoot>/.worktrees/<worktreeName>`; callers cannot supply a worktree path, workspace ID, tab ID, or pane ID.
 
 The launch is serial: validate repository → inventory git and Herdr → exactly create/reuse the worktree → reuse the sole matching workspace or create one no-focus workspace → create one no-focus tab → start one worker → submit the fixed boundary prompt. Duplicate matching workspaces fail closed. Partial resources remain after failure and are returned as confirmed handles; ambiguous mutations are never retried or cleaned up automatically. `/.worktrees/` must already be ignored.
 
@@ -77,6 +77,19 @@ Add the optional `piProfile` field to start the worker through [`pi-profile`](ht
 - Without `piProfile`, the launch is unchanged: `herdr agent start --kind pi`. With it, the orchestrator checks the name is free, creates the same no-focus tab, types one fixed, fully quoted `pi-profile --cwd <worktree> <name> [...args]` command into it (so a profile's default directory cannot move the worker out of the worktree), waits until Herdr detects an idle `pi` agent in that exact pane, names it, verifies the name, and only then submits the bounded prompt. `pi-profile` therefore owns profile `.env` loading, environment filtering, settings/packages, extension injection, and session leases exactly as in a manual launch.
 - `pi-profile` and `pi` must be on the `PATH` of the shell Herdr opens in a new tab, and that shell must be bash- or zsh-compatible.
 - A failed profiled launch reports the confirmed worktree/workspace/tab plus `launcher.commandSubmitted`, is never retried or cleaned up, and never includes the prompt, arguments, command text, or profile environment. See [docs/tool-contract.md](docs/tool-contract.md#profiled-pi-launch-piprofile) for stages and reconciliation.
+
+#### Per-run permission flags
+
+By default the worker boundary forbids the worker from creating Herdr workspaces/tabs/panes/agents and from dispatching subagents or background work. Two optional booleans lift those prohibitions for a single launch:
+
+```json
+{"tool":"herdr_task","input":{"action":"launch","repoRoot":"/absolute/project","worktreeName":"issue-123","branch":"feat/issue-123","baseRef":"main","tabLabel":"issue-123","agentName":"issue-123","agentKind":"pi","allowWorkspaces":true,"allowDispatch":true,"prompt":"Implement the approved plan and report evidence."}}
+```
+
+- `allowWorkspaces` (default `false`) permits the worker to create Herdr workspaces, tabs, panes, or agents.
+- `allowDispatch` (default `false`) permits the worker to dispatch subagents or background work.
+- When set, the corresponding boundary line reads as authorized for that run; when absent or `false`, the boundary states the prohibition and that no grant was made. Non-boolean values are rejected as `invalid_input`.
+- These are **operator authorization knobs**, not an independent approval broker: set them only from your own instruction (your turn, a skill, an extension). They are never derived from the untrusted `prompt`, so task prose cannot grant itself either permission. The git-worktree-creation ban and the Todo-boundary-rewrite ban remain absolute regardless of these flags.
 
 While the orchestrator is loaded, its policy hook blocks direct Herdr topology creation/start calls and direct Bash `git worktree add|move|remove`. It also bounds Todo calls tagged `enqueue` to the current canonical repository and appends a repository execution footer. `herdr_pane run`/`send-text` into an existing pane are not classified. This is defense in depth, not a shell sandbox.
 
