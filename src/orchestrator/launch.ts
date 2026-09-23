@@ -6,7 +6,7 @@ import { HerdrToolError } from "../errors.ts";
 import { WORKTREE_DIR, PROFILE_POLL_INTERVAL_MS, PROFILE_READY_POLLS, PROFILE_STARTUP_DEADLINE_MS } from "./contracts.ts";
 import type { LaunchResources, LaunchResult, OrchestratorDependencies, RepositoryIdentity, TaskInspectInput, TaskLaunchInput, WorkspaceMatch } from "./contracts.ts";
 import { OrchestratorError } from "./errors.ts";
-import { inventoryHerdr, selectWorkspace } from "./herdr-inventory.ts";
+import { inventoryHerdr, originWorkspaceId, selectWorkspace } from "./herdr-inventory.ts";
 import { buildProfileCommand, isPiProfileName } from "./profile.ts";
 import { buildWorkerPrompt } from "./prompt.ts";
 import { ensureWorktree, inspectWorktrees, validateRepository } from "./repository.ts";
@@ -148,7 +148,7 @@ export async function inspectTask(input: TaskInspectInput, deps: OrchestratorDep
   const repository = await validateRepository(input.repoRoot, deps, signal);
   const worktrees = await inspectWorktrees(repository, deps.git, signal);
   const herdrInventory = await inventoryHerdr(repository, deps, signal);
-  const workspace = selectWorkspace(herdrInventory);
+  const workspace = selectWorkspace(herdrInventory, originWorkspaceId(deps.env));
   return {
     action: "inspect",
     repository,
@@ -183,7 +183,7 @@ export async function launchTask(input: TaskLaunchInput, deps: OrchestratorDepen
     const launcherCommand = input.piProfile === undefined ? undefined : profileCommand(input.piProfile, expectedWorktree);
     const initialWorktrees = await inspectWorktrees(repository, deps.git, signal);
     const herdrInventory = await inventoryHerdr(repository, deps, signal);
-    const existingWorkspace = selectWorkspace(herdrInventory);
+    const existingWorkspace = selectWorkspace(herdrInventory, originWorkspaceId(deps.env));
     if (existingWorkspace) resources.workspace = { workspaceId: existingWorkspace.workspaceId, disposition: "existing" };
 
     // A profiled worker is named only after it is running, so a taken name

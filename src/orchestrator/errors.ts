@@ -6,6 +6,7 @@ export type OrchestratorErrorCode =
   | "worktree_policy"
   | "worktree_collision"
   | "workspace_ambiguous"
+  | "workspace_origin_mismatch"
   | "git_failed"
   | "herdr_failed"
   | "cancelled";

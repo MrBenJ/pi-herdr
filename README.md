@@ -57,7 +57,9 @@ Each tool takes a flat object with `action`; required and allowed fields vary by
 
 `herdr_task launch` is the default way to create worker topology. It accepts a canonical main-checkout `repoRoot`, a single `worktreeName`, branch/base ref, labels, worker kind/name, native args, and task prompt. It constructs exactly `<repoRoot>/.worktrees/<worktreeName>`; callers cannot supply a worktree path, workspace ID, tab ID, or pane ID (nor a permission grant — see [Worker permission grants](#worker-permission-grants-operator-environment-only)).
 
-The launch is serial: validate repository → inventory git and Herdr → exactly create/reuse the worktree → reuse the sole matching workspace or create one no-focus workspace → create one no-focus tab → start one worker → submit the fixed boundary prompt. Duplicate matching workspaces fail closed. Partial resources remain after failure and are returned as confirmed handles; ambiguous mutations are never retried or cleaned up automatically. `/.worktrees/` must already be ignored.
+The launch is serial: validate repository → inventory git and Herdr → exactly create/reuse the worktree → resolve the target workspace → create one no-focus tab → start one worker → submit the fixed boundary prompt. Partial resources remain after failure and are returned as confirmed handles; ambiguous mutations are never retried or cleaned up automatically. `/.worktrees/` must already be ignored.
+
+Workspace resolution is **spawn-workspace affinity**: the hosting Herdr pane stamps the requesting agent's workspace as `HERDR_WORKSPACE_ID`, and that workspace is the launch target even when several workspaces hold the same repository — a worker always lands where its spawner lives. If the spawning workspace has no pane bound to the repository, the launch fails closed (`workspace_origin_mismatch`) instead of leaking into an unrelated workspace. When no `HERDR_WORKSPACE_ID` is present (older hosts, plain CLI use), resolution falls back to unique repository matching, and duplicate matching workspaces fail closed (`workspace_ambiguous`).
 
 ```json
 {"tool":"herdr_task","input":{"action":"inspect","repoRoot":"/absolute/project"}}

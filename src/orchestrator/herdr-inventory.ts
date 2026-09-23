@@ -15,6 +15,25 @@ export interface HerdrInventory {
   violations: string[];
 }
 
+/**
+ * The workspace the requesting agent lives in, stamped by the hosting Herdr
+ * pane as `HERDR_WORKSPACE_ID`. Spawn-workspace affinity: a launch resolves
+ * its target workspace from where the request ORIGINATES, never from repo
+ * matching alone, so a worker always lands in its spawner's workspace even
+ * when several workspaces hold the same repository. Absent (e.g. tooling
+ * tests or a host that predates the variable) ⇒ the caller falls back to
+ * unique repo matching. A present-but-unusable value fails closed rather
+ * than silently widening to another workspace.
+ */
+export function originWorkspaceId(env: NodeJS.ProcessEnv): string | undefined {
+  const value = env.HERDR_WORKSPACE_ID;
+  if (value === undefined) return undefined;
+  if (!value || value.includes("\0")) {
+    throw new OrchestratorError({ code: "invalid_input", message: "HERDR_WORKSPACE_ID is present but not a usable workspace ID.", stage: "workspace-inventory" });
+  }
+  return value;
+}
+
 function cancelled(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw new OrchestratorError({ code: "cancelled", message: "Orchestration was cancelled during Herdr inventory.", stage: "workspace-inventory" });
 }
@@ -103,7 +122,22 @@ export async function inventoryHerdr(repository: RepositoryIdentity, deps: Orche
   return { canonicalRepoRoot: repository.repoRoot, workspaces, violations };
 }
 
-export function selectWorkspace(inventory: HerdrInventory): WorkspaceMatch | undefined {
+export function selectWorkspace(inventory: HerdrInventory, origin?: string): WorkspaceMatch | undefined {
+  if (origin !== undefined) {
+    // AFFINITY WINS: the spawner's workspace is the target, full stop. It
+    // must be one of the repo-bound workspaces from the inventory — if it is
+    // not, the request is misconfigured (or spoofed) and fails closed here
+    // rather than leaking a worker into an unrelated workspace.
+    const workspace = inventory.workspaces.find(entry => entry.workspaceId === origin);
+    if (!workspace) {
+      throw new OrchestratorError({
+        code: "workspace_origin_mismatch",
+        message: `The spawning workspace (${origin}) has no pane bound to this repository; a launch stays in the workspace it originates from.`,
+        stage: "workspace-inventory",
+      });
+    }
+    return { workspaceId: workspace.workspaceId, paneIds: workspace.matchingPaneIds, canonicalRepoRoot: inventory.canonicalRepoRoot };
+  }
   if (inventory.workspaces.length === 0) return undefined;
   if (inventory.workspaces.length > 1) {
     const ids = inventory.workspaces.map(workspace => workspace.workspaceId).sort();

@@ -116,11 +116,11 @@ export default function orchestrator(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "herdr_task",
     label: "Herdr task",
-    description: "Safely inspect or launch one repository-bound worker. The orchestrator derives the sole workspace and exact <repo>/.worktrees/<name> path; callers cannot supply topology IDs or a worktree path. Launch is serial, no-focus, one-worker, and never retries or cleans up ambiguous mutations. Optional piProfile (agentKind pi only) starts the worker through `pi-profile <name>`; args stay native Pi arguments.",
+    description: "Safely inspect or launch one repository-bound worker. The orchestrator derives the exact <repo>/.worktrees/<name> path; callers cannot supply topology IDs or a worktree path. Launch targets the requesting agent's own Herdr workspace (spawn-workspace affinity via HERDR_WORKSPACE_ID), falling back to unique repo matching; a spawning workspace not bound to the repo fails closed. Launch is serial, no-focus, one-worker, and never retries or cleans up ambiguous mutations. Optional piProfile (agentKind pi only) starts the worker through `pi-profile <name>`; args stay native Pi arguments.",
     promptSnippet: "Inspect or launch one safely bounded repository worker",
     promptGuidelines: [
       "Use herdr_task launch for worker topology instead of direct workspace, tab, pane, agent-start, or git-worktree mutations.",
-      "Use herdr_task inspect before uncertain launches; duplicate repository workspaces fail closed.",
+      "Use herdr_task inspect before uncertain launches; workers land in the spawning agent's workspace, and an unbound spawning workspace fails closed.",
       "To run a Pi worker under a pi-profile, set piProfile to the logical profile name; never put a profile name, path, or command in args.",
     ],
     parameters: TaskSchema,
