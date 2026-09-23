@@ -5,7 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, expect, it } from "vitest";
 import type { GitRunner, HerdrExecutor, OrchestratorDependencies, RepositoryIdentity } from "../src/orchestrator/contracts.ts";
-import { inventoryHerdr, selectWorkspace } from "../src/orchestrator/herdr-inventory.ts";
+import { inventoryHerdr, originWorkspaceId, selectWorkspace } from "../src/orchestrator/herdr-inventory.ts";
 
 const exec = promisify(execFile);
 const cleanup: string[] = [];
@@ -120,4 +120,36 @@ it("stops after cancellation between workspace and pane inventory", async () => 
   const { repository } = await makeRepo(); const calls: Array<[string, Record<string, unknown>]> = []; const controller = new AbortController();
   await expect(inventoryHerdr(repository, dependencies([workspaceList(["w1"]), paneList("w1", [])], calls, controller), controller.signal)).rejects.toMatchObject({ code: "cancelled" });
   expect(calls).toEqual([["workspace", { action: "list" }]]);
+});
+
+it("prefers the spawning workspace when several workspaces match the repository", async () => {
+  const { repository, linked } = await makeRepo(); const calls: Array<[string, Record<string, unknown>]> = [];
+  const inventory = await inventoryHerdr(repository, dependencies([
+    workspaceList(["wJ", "wE"]),
+    paneList("wJ", [{ pane_id: "wJ:p1", cwd: linked }]),
+    paneList("wE", [{ pane_id: "wE:p1", cwd: repository.repoRoot }]),
+  ], calls));
+  // The same inventory that is ambiguous without affinity resolves to the
+  // spawner's workspace with it.
+  expect(selectWorkspace(inventory, "wE")).toEqual({ workspaceId: "wE", paneIds: ["wE:p1"], canonicalRepoRoot: repository.repoRoot });
+  expect(selectWorkspace(inventory, "wJ")).toEqual({ workspaceId: "wJ", paneIds: ["wJ:p1"], canonicalRepoRoot: repository.repoRoot });
+});
+
+it("fails closed when the spawning workspace is not bound to the repository", async () => {
+  const { repository } = await makeRepo();
+  const { repository: unrelated } = await makeRepo();
+  const inventory = await inventoryHerdr(repository, dependencies([
+    workspaceList(["w1"]), paneList("w1", [{ pane_id: "w1:p1", cwd: unrelated.repoRoot }]),
+  ], []));
+  // COUNTER-CASE: without affinity the same inventory is merely "no match";
+  // with affinity it is a hard failure, never a silent fallback.
+  expect(selectWorkspace(inventory)).toBeUndefined();
+  try { selectWorkspace(inventory, "w0"); expect.unreachable(); } catch (error) { expect(error).toMatchObject({ code: "workspace_origin_mismatch" }); }
+});
+
+it("parses the hosting workspace ID from the environment", () => {
+  expect(originWorkspaceId({})).toBeUndefined();
+  expect(originWorkspaceId({ HERDR_WORKSPACE_ID: "wR" })).toBe("wR");
+  expect(() => originWorkspaceId({ HERDR_WORKSPACE_ID: "" })).toThrow(/not a usable workspace ID/);
+  expect(() => originWorkspaceId({ HERDR_WORKSPACE_ID: "w\0R" })).toThrow(/not a usable workspace ID/);
 });

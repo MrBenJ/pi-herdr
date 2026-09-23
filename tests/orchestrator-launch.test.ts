@@ -109,6 +109,29 @@ it("creates one no-focus main-repository workspace only when inventory has no ma
   expect(calls.filter(([group, input]) => group === "agent" && input.action === "start")).toHaveLength(1);
 });
 
+it("lands the worker in the spawning workspace when several workspaces match the repository", async () => {
+  const { root, worktree } = await makeRepo(); const calls: Array<[string, Record<string, unknown>]> = [];
+  // The same inventory that fails closed as ambiguous without affinity.
+  await expect(launchTask(request(root), deps([
+    workspaceList(["wR", "w0"]), paneList("wR", root), paneList("w0", root),
+  ], []))).rejects.toMatchObject({ code: "workspace_ambiguous" });
+  const result = await launchTask(request(root), deps([
+    workspaceList(["wR", "w0"]), paneList("wR", root), paneList("w0", root), createdTab("w0"), agentResult("agent_started", "w0:p2"), agentResult("agent_prompted", "w0:p2"),
+  ], calls, git, { HERDR_WORKSPACE_ID: "w0" }));
+  expect(result.resources.workspace).toEqual({ workspaceId: "w0", disposition: "existing" });
+  expect(calls[3]).toEqual(["tab", { action: "create", workspaceId: "w0", cwd: worktree, label: "review", focus: false }]);
+  expect(calls.some(([group, input]) => group === "workspace" && input.action === "create")).toBe(false);
+});
+
+it("fails closed before any mutation when the spawning workspace is not repo-bound", async () => {
+  const { root } = await makeRepo(); const calls: Array<[string, Record<string, unknown>]> = [];
+  await expect(launchTask(request(root), deps([
+    workspaceList(["wR", "w0"]), paneList("wR", root), paneList("w0", os.tmpdir()),
+  ], calls, git, { HERDR_WORKSPACE_ID: "w0" }))).rejects.toMatchObject({ code: "workspace_origin_mismatch", stage: "workspace-inventory" });
+  // Inventory reads only: no worktree, workspace, tab, agent, or prompt.
+  expect(calls.map(([group, input]) => [group, input.action])).toEqual([["workspace", "list"], ["pane", "list"], ["pane", "list"]]);
+});
+
 it("preserves the inventoried workspace when worktree creation is ambiguous", async () => {
   const { root } = await makeRepo(false); const calls: Array<[string, Record<string, unknown>]> = [];
   const failingGit: GitRunner = async (command, args, options) => args[0] === "worktree" && args[1] === "add"
